@@ -14,11 +14,10 @@ limitations under the License.
 
 import unittest
 import numpy as np
-from os import path
 import math
 from openmdao.api import Problem
 
-from openmdao_ccblade import CCAirfoil, CCBlade2
+from ccblade import CCAirfoil, CCBlade
 
 
 class TestNREL5MW(unittest.TestCase):
@@ -37,7 +36,6 @@ class TestNREL5MW(unittest.TestCase):
         theta = np.array([13.308, 13.308, 13.308, 13.308, 11.480, 10.162, 9.011, 7.795,
                           6.544, 5.361, 4.188, 3.125, 2.319, 1.526, 0.863, 0.370, 0.106])
         B = 3  # number of blades
-        iterRe = 1
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
 
         # atmosphere
@@ -83,8 +81,9 @@ class TestNREL5MW(unittest.TestCase):
                           3.823, 6.602, 8.668, 10.450, 12.055, 13.536, 14.920, 16.226,
                           17.473, 18.699, 19.941, 21.177, 22.347, 23.469])
 
+        n = len(r)
         ccblade = Problem()
-        root = ccblade.root = CCBlade2(af,nSector,bemoptions)
+        root = ccblade.root = CCBlade(nSector, n)
         ccblade.setup()
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip
@@ -101,8 +100,10 @@ class TestNREL5MW(unittest.TestCase):
         ccblade['hubHt'] = hubHt
         ccblade['nSector'] = nSector
         ccblade['Uinf'] = Uinf[0]
-        ccblade['tsr'] = Omega[0] * ccblade['Rtip'] * math.pi / (30.0 * Uinf[0])
+        ccblade['Omega'] = Omega[0]
         ccblade['pitch'] = np.radians(pitch[0])
+        ccblade['af'] = af
+        ccblade['bemoptions'] = bemoptions
 
         ccblade.run()
 
@@ -112,7 +113,7 @@ class TestNREL5MW(unittest.TestCase):
 
         for i in range(len(Uinf)):
             ccblade['Uinf'] = Uinf[i]
-            ccblade['tsr'] = Omega[i] * ccblade['Rtip'] * math.pi / (30.0 * Uinf[i])
+            ccblade['Omega'] = Omega[i]
             ccblade['pitch'] = np.radians(pitch[i])
 
             ccblade.run()

@@ -18,7 +18,7 @@ from math import pi
 from os import path
 from openmdao.api import Problem
 
-from openmdao_ccblade import CCAirfoil, CCBlade2, LoadsGroup2
+from ccblade import CCAirfoil, CCBlade, LoadsGroup
 
 class TestGradientsClass(unittest.TestCase):
     @classmethod
@@ -84,29 +84,19 @@ class TestGradients(TestGradientsClass):
         Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
         azimuth = 90.0
 
-        B = 3
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
         n = len(r)
+
         ## Load gradients
         loads = Problem()
-        root = loads.root = LoadsGroup2(af, nSector, bemoptions, n)
+        root = loads.root = LoadsGroup(n)
         loads.setup()
-
-        ##  RANDOM  CHECK
-        # # Rhub = (np.random.random() + 0.5) * Rhub
-        # # Rtip = (np.random.random() + 0.5) * Rtip
-        # tilt = (np.random.random() + 0.5) * tilt
-        # precone = (np.random.random() + 0.5) * precone
-        # yaw = (np.random.random() + 0.5) * (yaw + 2.)
-        # Uinf = (np.random.random() + 0.5) * Uinf
-        # # azimuth = (np.random.random() + 0.5) * azimuth
 
         loads['Rhub'] = Rhub
         loads['Rtip'] = Rtip
         loads['r'] = r
         loads['chord'] = chord
         loads['theta'] = np.radians(theta)
-        # loads['B'] = B
         loads['rho'] = rho
         loads['mu'] = mu
         loads['tilt'] = np.radians(tilt)
@@ -114,47 +104,50 @@ class TestGradients(TestGradientsClass):
         loads['yaw'] = np.radians(yaw)
         loads['shearExp'] = shearExp
         loads['hubHt'] = hubHt
-        loads['nSector'] = nSector
         loads['Uinf'] = Uinf
-        loads['tsr'] = Omega * loads['Rtip'] * pi / (30.0 * Uinf)
+        loads['Omega'] = Omega
         loads['pitch'] = np.radians(pitch)
         loads['azimuth'] = np.radians(azimuth)
+        loads['af'] = af
+        loads['bemoptions'] = bemoptions
 
         loads.run()
         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
-        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp', 'Omega'])
+        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp'])
         # loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
+
         ## Power Gradients
-        # bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
-        # ccblade = Problem()
-        # root = ccblade.root = CCBlade2(af, nSector, bemoptions)
-        # ccblade.setup()
-        # ccblade['Rhub'] = Rhub
-        # ccblade['Rtip'] = Rtip
-        # ccblade['r'] = r
-        # ccblade['chord'] = chord
-        # ccblade['theta'] = np.radians(theta)
-        # ccblade['B'] = B
-        # ccblade['rho'] = rho
-        # ccblade['mu'] = mu
-        # ccblade['tilt'] = np.radians(tilt)
-        # ccblade['precone'] = np.radians(precone)
-        # ccblade['yaw'] = np.radians(yaw)
-        # ccblade['shearExp'] = shearExp
-        # ccblade['hubHt'] = hubHt
-        # ccblade['nSector'] = nSector
-        # ccblade['Uinf'] = Uinf
-        # ccblade['tsr'] = Omega * ccblade['Rtip'] * pi / (30.0 * Uinf)
-        # ccblade['pitch'] = np.radians(pitch)
-        #
-        # ccblade.run()
-        # print "Generating gradients for Test 1. Please wait..."
-        # power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
-        # power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q', 'Omega'])
-        # # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
-        # print "Gradients generated for Test 1."
+        ccblade = Problem()
+        root = ccblade.root = CCBlade(nSector, n)
+        ccblade.setup()
+        ccblade['Rhub'] = Rhub
+        ccblade['Rtip'] = Rtip
+        ccblade['r'] = r
+        ccblade['chord'] = chord
+        ccblade['theta'] = np.radians(theta)
+        ccblade['B'] = B
+        ccblade['rho'] = rho
+        ccblade['mu'] = mu
+        ccblade['tilt'] = np.radians(tilt)
+        ccblade['precone'] = np.radians(precone)
+        ccblade['yaw'] = np.radians(yaw)
+        ccblade['shearExp'] = shearExp
+        ccblade['hubHt'] = hubHt
+        ccblade['nSector'] = nSector
+        ccblade['Uinf'] = Uinf
+        ccblade['Omega'] = Omega
+        ccblade['pitch'] = np.radians(pitch)
+
+        ccblade.run()
+
+        print "Generating gradients for Test 1. Please wait..."
+        power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
+        power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q', 'Omega'])
+        # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
+        print "Gradients generated for Test 1."
+
         self.loads_gradients = loads_gradients
-        # self.power_gradients = power_gradients
+        self.power_gradients = power_gradients
         self.n = len(r)
         self.npts = 1  # len(Uinf)
 
@@ -595,11 +588,11 @@ class TestGradients(TestGradientsClass):
 
     def test_dOmega1(self):
 
-        dNp_dOmega = self.loads_gradients['Np', 'Uinf']['J_fwd'] * self.loads_gradients['Omega', 'Uinf']['J_fwd']**-1
-        dTp_dOmega = self.loads_gradients['Tp', 'Uinf']['J_fwd'] * self.loads_gradients['Omega', 'Uinf']['J_fwd']**-1
+        dNp_dOmega = self.loads_gradients['Np', 'Omega']['J_fwd']
+        dTp_dOmega = self.loads_gradients['Tp', 'Omega']['J_fwd']
 
-        dNp_dOmega_fd = self.loads_gradients['Np', 'Uinf']['J_fd'] * self.loads_gradients['Omega', 'Uinf']['J_fd']**-1
-        dTp_dOmega_fd = self.loads_gradients['Tp', 'Uinf']['J_fd'] * self.loads_gradients['Omega', 'Uinf']['J_fd']**-1
+        dNp_dOmega_fd = self.loads_gradients['Np', 'Omega']['J_fd']
+        dTp_dOmega_fd = self.loads_gradients['Tp', 'Omega']['J_fd']
 
         np.testing.assert_allclose(dNp_dOmega_fd, dNp_dOmega, rtol=1e-5, atol=1e-6)
         np.testing.assert_allclose(dTp_dOmega_fd, dTp_dOmega, rtol=1e-5, atol=1e-6)
@@ -607,13 +600,13 @@ class TestGradients(TestGradientsClass):
 
     def test_dOmega2(self):
 
-        dT_dOmega = self.power_gradients['T', 'Uinf']['J_fwd'] * self.power_gradients['Omega', 'Uinf']['J_fwd']**-1
-        dQ_dOmega = self.power_gradients['Q', 'Uinf']['J_fwd'] * self.power_gradients['Omega', 'Uinf']['J_fwd']**-1
-        dP_dOmega = self.power_gradients['P', 'Uinf']['J_fwd'] * self.power_gradients['Omega', 'Uinf']['J_fwd']**-1
+        dT_dOmega = self.power_gradients['T', 'Omega']['J_fwd']
+        dQ_dOmega = self.power_gradients['Q', 'Omega']['J_fwd']
+        dP_dOmega = self.power_gradients['P', 'Omega']['J_fwd']
 
-        dT_dOmega_fd = self.power_gradients['T', 'Uinf']['J_fd'] * self.power_gradients['Omega', 'Uinf']['J_fd']**-1
-        dQ_dOmega_fd = self.power_gradients['Q', 'Uinf']['J_fd'] * self.power_gradients['Omega', 'Uinf']['J_fd']**-1
-        dP_dOmega_fd = self.power_gradients['P', 'Uinf']['J_fd'] * self.power_gradients['Omega', 'Uinf']['J_fd']**-1
+        dT_dOmega_fd = self.power_gradients['T', 'Omega']['J_fd']
+        dQ_dOmega_fd = self.power_gradients['Q', 'Omega']['J_fd']
+        dP_dOmega_fd = self.power_gradients['P', 'Omega']['J_fd']
 
         np.testing.assert_allclose(dT_dOmega_fd, dT_dOmega, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dOmega_fd, dQ_dOmega, rtol=5e-5, atol=1e-8)
@@ -623,13 +616,13 @@ class TestGradients(TestGradientsClass):
 
     def test_dOmega3(self):
 
-        dCT_dOmega = self.power_gradients['CT', 'Uinf']['J_fwd'] * self.power_gradients['Omega', 'Uinf']['J_fwd']**-1
-        dCQ_dOmega = self.power_gradients['CQ', 'Uinf']['J_fwd'] * self.power_gradients['Omega', 'Uinf']['J_fwd']**-1
-        dCP_dOmega = self.power_gradients['CP', 'Uinf']['J_fwd'] * self.power_gradients['Omega', 'Uinf']['J_fwd']**-1
+        dCT_dOmega = self.power_gradients['CT', 'Omega']['J_fwd']
+        dCQ_dOmega = self.power_gradients['CQ', 'Omega']['J_fwd']
+        dCP_dOmega = self.power_gradients['CP', 'Omega']['J_fwd']
 
-        dCT_dOmega_fd = self.power_gradients['CT', 'Uinf']['J_fd'] * self.power_gradients['Omega', 'Uinf']['J_fd']**-1
-        dCQ_dOmega_fd = self.power_gradients['CQ', 'Uinf']['J_fd'] * self.power_gradients['Omega', 'Uinf']['J_fd']**-1
-        dCP_dOmega_fd = self.power_gradients['CP', 'Uinf']['J_fd'] * self.power_gradients['Omega', 'Uinf']['J_fd']**-1
+        dCT_dOmega_fd = self.power_gradients['CT', 'Omega']['J_fd']
+        dCQ_dOmega_fd = self.power_gradients['CQ', 'Omega']['J_fd']
+        dCP_dOmega_fd = self.power_gradients['CP', 'Omega']['J_fd']
 
         np.testing.assert_allclose(dCT_dOmega_fd, dCT_dOmega, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dOmega_fd, dCQ_dOmega, rtol=5e-5, atol=1e-8)
@@ -1029,12 +1022,14 @@ class TestGradientsNotRotating(TestGradientsClass):
         pitch = 0.0
         Omega = 0.0  # convert to RPM
         azimuth = 90.
+
         n = len(r)
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
+
         ## Load gradients
         loads = Problem()
-        LoadsGroup2()
-        root = loads.root = LoadsGroup2(af, nSector, bemoptions, n)
+        root = loads.root = LoadsGroup(n)
+
         loads.setup()
 
         loads['Rhub'] = Rhub
@@ -1042,7 +1037,6 @@ class TestGradientsNotRotating(TestGradientsClass):
         loads['r'] = r
         loads['chord'] = chord
         loads['theta'] = np.radians(theta)
-        # loads['B'] = B
         loads['rho'] = rho
         loads['mu'] = mu
         loads['tilt'] = np.radians(tilt)
@@ -1050,16 +1044,18 @@ class TestGradientsNotRotating(TestGradientsClass):
         loads['yaw'] = np.radians(yaw)
         loads['shearExp'] = shearExp
         loads['hubHt'] = hubHt
-        loads['nSector'] = nSector
+        # loads['nSector'] = nSector
         loads['Uinf'] = Uinf
-        loads['tsr'] = Omega * loads['Rtip'] * pi / (30.0 * Uinf)
+        loads['Omega'] = Omega
         loads['pitch'] = np.radians(pitch)
         loads['azimuth'] = np.radians(azimuth)
+        loads['af'] = af
+        loads['bemoptions'] = bemoptions
 
         loads.run()
         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
         print "Generating gradients for Test 2. Please wait."
-        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients)
+        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp'])
         print "Gradients generated for Test 2."
         cls.loads_gradients = loads_gradients
         cls.n = len(r)
@@ -1354,13 +1350,12 @@ class TestGradientsFreestreamArray(unittest.TestCase):
         pitch = np.zeros(3)
         Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
 
-
-        B = 3
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
+        n = len(r)
 
         ## Power Gradients
         ccblade = Problem()
-        root = ccblade.root = CCBlade2(af, nSector, bemoptions)
+        root = ccblade.root = CCBlade(nSector, n)
         ccblade.setup()
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip
@@ -1376,19 +1371,21 @@ class TestGradientsFreestreamArray(unittest.TestCase):
         ccblade['shearExp'] = shearExp
         ccblade['hubHt'] = hubHt
         ccblade['nSector'] = nSector
+        ccblade['af'] = af
+        ccblade['bemoptions'] = bemoptions
 
         power_gradients = [0]*len(Uinf)
 
         for i in range(len(Uinf)):
             ccblade['Uinf'] = Uinf[i]
-            ccblade['tsr'] = tsr
+            ccblade['Omega'] = Omega[i]
             ccblade['pitch'] = np.radians(pitch[i])
 
             ccblade.run()
 
             power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
             print "Generating gradients for Test " + str(i+3) + ". Please wait..."
-            power_gradients_sub = ccblade.check_total_derivatives(out_stream=power_test_total_gradients)
+            power_gradients_sub = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q'])
             print "Gradients " + str(i+3) + " calculated."
             power_gradients[i] = power_gradients_sub
 
