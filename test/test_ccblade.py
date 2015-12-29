@@ -84,7 +84,7 @@ class TestNREL5MW(unittest.TestCase):
                           17.473, 18.699, 19.941, 21.177, 22.347, 23.469])
 
         ccblade = Problem()
-        root = ccblade.root = CCBlade(af)
+        root = ccblade.root = CCBlade(af,nSector,bemoptions)
         ccblade.setup()
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip
@@ -103,7 +103,6 @@ class TestNREL5MW(unittest.TestCase):
         ccblade['Uinf'] = Uinf[0]
         ccblade['tsr'] = Omega[0] * ccblade['Rtip'] * math.pi / (30.0 * Uinf[0])
         ccblade['pitch'] = np.radians(pitch[0])
-        ccblade['azimuth'] = np.radians(90.0)
 
         ccblade.run()
 
