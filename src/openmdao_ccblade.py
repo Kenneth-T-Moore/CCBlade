@@ -306,9 +306,9 @@ class AirfoilComp(Component):
 
         return J
 
-class Angle(Component):
+class BEM(Component):
     def __init__(self, n, i):
-        super(Angle, self).__init__()
+        super(BEM, self).__init__()
 
         self.add_param('pitch', shape=1)
         self.add_param('Rtip', shape=1)
@@ -972,7 +972,7 @@ class BrentGroup(Group):
         self.add('flow', FlowCondition(), promotes=['*'])
         self.add('airfoils', AirfoilComp(n, i), promotes=['*'])
         sub = self.add('sub', Group(), promotes=['*'])
-        sub.add('angles', Angle(n, i), promotes=['*'])
+        sub.add('bem', BEM(n, i), promotes=['*'])
 
         sub.ln_solver = ScipyGMRES()
         self.ln_solver = ScipyGMRES()
@@ -1320,8 +1320,8 @@ if __name__ == "__main__":
     print 'phi', loads['phi']
     print 'Np', loads['Np']
     print 'Tp', loads['Tp']
-    # test_grad = open('partial_test_grad.txt', 'w')
-    # power_gradients = loads.check_total_derivatives(out_stream=test_grad)
+    test_grad = open('partial_test_grad2.txt', 'w')
+    power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
     # power_partial = loads.check_partial_derivatives(out_stream=test_grad)
     # print "gradients calculated"
 
@@ -1362,6 +1362,8 @@ if __name__ == "__main__":
     ccblade['bemoptions'] = bemoptions
 
     ccblade.run()
+
+    ccblade.root.load_group.group1.brent1.list_connections()
 
     # test_grad = open('partial_test_grad.txt', 'w')
     # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
