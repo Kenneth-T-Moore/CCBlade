@@ -85,10 +85,11 @@ class TestGradients(TestGradientsClass):
         azimuth = 90.0
 
         B = 3
-
+        bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
+        n = len(r)
         ## Load gradients
         loads = Problem()
-        root = loads.root = LoadsGroup2(af, azimuth)
+        root = loads.root = LoadsGroup2(af, nSector, bemoptions, n)
         loads.setup()
 
         ##  RANDOM  CHECK
@@ -121,39 +122,39 @@ class TestGradients(TestGradientsClass):
 
         loads.run()
         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
-        # loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp', 'Omega'])
-        loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
+        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp', 'Omega'])
+        # loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
         ## Power Gradients
-        bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
-        ccblade = Problem()
-        root = ccblade.root = CCBlade2(af, nSector, bemoptions)
-        ccblade.setup()
-        ccblade['Rhub'] = Rhub
-        ccblade['Rtip'] = Rtip
-        ccblade['r'] = r
-        ccblade['chord'] = chord
-        ccblade['theta'] = np.radians(theta)
-        ccblade['B'] = B
-        ccblade['rho'] = rho
-        ccblade['mu'] = mu
-        ccblade['tilt'] = np.radians(tilt)
-        ccblade['precone'] = np.radians(precone)
-        ccblade['yaw'] = np.radians(yaw)
-        ccblade['shearExp'] = shearExp
-        ccblade['hubHt'] = hubHt
-        ccblade['nSector'] = nSector
-        ccblade['Uinf'] = Uinf
-        ccblade['tsr'] = Omega * ccblade['Rtip'] * pi / (30.0 * Uinf)
-        ccblade['pitch'] = np.radians(pitch)
-
-        ccblade.run()
-        print "Generating gradients for Test 1. Please wait..."
-        power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
-        power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q', 'Omega'])
-        # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
-        print "Gradients generated for Test 1."
+        # bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
+        # ccblade = Problem()
+        # root = ccblade.root = CCBlade2(af, nSector, bemoptions)
+        # ccblade.setup()
+        # ccblade['Rhub'] = Rhub
+        # ccblade['Rtip'] = Rtip
+        # ccblade['r'] = r
+        # ccblade['chord'] = chord
+        # ccblade['theta'] = np.radians(theta)
+        # ccblade['B'] = B
+        # ccblade['rho'] = rho
+        # ccblade['mu'] = mu
+        # ccblade['tilt'] = np.radians(tilt)
+        # ccblade['precone'] = np.radians(precone)
+        # ccblade['yaw'] = np.radians(yaw)
+        # ccblade['shearExp'] = shearExp
+        # ccblade['hubHt'] = hubHt
+        # ccblade['nSector'] = nSector
+        # ccblade['Uinf'] = Uinf
+        # ccblade['tsr'] = Omega * ccblade['Rtip'] * pi / (30.0 * Uinf)
+        # ccblade['pitch'] = np.radians(pitch)
+        #
+        # ccblade.run()
+        # print "Generating gradients for Test 1. Please wait..."
+        # power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
+        # power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q', 'Omega'])
+        # # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
+        # print "Gradients generated for Test 1."
         self.loads_gradients = loads_gradients
-        self.power_gradients = power_gradients
+        # self.power_gradients = power_gradients
         self.n = len(r)
         self.npts = 1  # len(Uinf)
 
@@ -1028,10 +1029,12 @@ class TestGradientsNotRotating(TestGradientsClass):
         pitch = 0.0
         Omega = 0.0  # convert to RPM
         azimuth = 90.
-
+        n = len(r)
+        bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
         ## Load gradients
         loads = Problem()
-        root = loads.root = LoadsGroup(af, nSector)
+        LoadsGroup2()
+        root = loads.root = LoadsGroup2(af, nSector, bemoptions, n)
         loads.setup()
 
         loads['Rhub'] = Rhub
@@ -1357,7 +1360,7 @@ class TestGradientsFreestreamArray(unittest.TestCase):
 
         ## Power Gradients
         ccblade = Problem()
-        root = ccblade.root = CCBlade(af, nSector, bemoptions)
+        root = ccblade.root = CCBlade2(af, nSector, bemoptions)
         ccblade.setup()
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip
