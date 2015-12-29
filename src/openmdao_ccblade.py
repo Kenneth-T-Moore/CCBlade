@@ -26,11 +26,8 @@ class CCInit(Component):
         self.add_param('Rtip', val=0.0)
         self.add_param('precone', val=0.0)
         self.add_param('precurveTip', val=0.0)
-        self.add_param('Uinf', val=0.0)
-        self.add_param('tsr', val=0.0)
 
         self.add_output('rotorR', shape=1)
-        self.add_output('Omega', shape=1)
         # self.add_output('rotating', val=True, pass_by_obj=True)
 
         self.fd_options['form'] = 'central'
@@ -44,14 +41,6 @@ class CCInit(Component):
         # rotor radius
         unknowns['rotorR'] = Rtip*cos(precone) + precurveTip*sin(precone)
 
-        # tip speed ratio
-        Uinf = params['Uinf']
-        Rtip = params['Rtip']
-        unknowns['Omega'] = Uinf*params['tsr']/Rtip * 30.0/pi
-
-        # rotating
-        # unknowns['rotating'] = (unknowns['Omega'] != 0)
-
     def linearize(self, params, unknowns, resids):
 
         J = {}
@@ -59,15 +48,10 @@ class CCInit(Component):
         precone = params['precone']
         precurveTip = params['precurveTip']
         Rtip = params['Rtip']
-        tsr = params['tsr']
-        Uinf = params['Uinf']
 
         J['rotorR', 'precone'] = -Rtip*sin(precone) + precurveTip*cos(precone)
         J['rotorR', 'precurveTip'] = sin(precone)
         J['rotorR', 'Rtip'] = cos(precone)
-        J['Omega', 'Uinf'] = tsr/Rtip * 30.0 / pi
-        J['Omega', 'tsr'] = Uinf/Rtip * 30.0 / pi
-        J['Omega', 'Rtip'] = -Uinf*tsr / (Rtip**2) * 30.0 / pi
 
         return J
 
@@ -998,7 +982,7 @@ class LoadsGroup(Group):
         self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
         self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
         self.add('azimuth', IndepVarComp('azimuth', 0.0), promotes=['*'])
-        self.add('tsr', IndepVarComp('tsr', 0.0), promotes=['*'])
+        self.add('Omega', IndepVarComp('Omega', 0.0), promotes=['*'])
         self.add('r', IndepVarComp('r', val=np.zeros(n)), promotes=['*'])
         self.add('chord', IndepVarComp('chord', val=np.zeros(n)), promotes=['*'])
         self.add('theta', IndepVarComp('theta', val=np.zeros(n)), promotes=['*'])
@@ -1040,9 +1024,9 @@ class Sweep(Group):
         self.add('loads', DistributedAeroLoads(n), promotes=['chord', 'rho', 'phi', 'cl', 'cd', 'W'])
 
 class SweepGroup(Group):
-    def __init__(self, nSector):
+    def __init__(self, nSector, n):
         super(SweepGroup, self).__init__()
-        n = len(af)
+
         self.add('r', IndepVarComp('r', np.zeros(n)), promotes=['*'])
         self.add('chord', IndepVarComp('chord', np.zeros(n)), promotes=['*'])
         self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
@@ -1058,7 +1042,7 @@ class SweepGroup(Group):
         self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
         self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
         self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
-        self.add('tsr', IndepVarComp('tsr', 0.0), promotes=['*'])
+        self.add('Omega', IndepVarComp('Omega', 0.0), promotes=['*'])
         self.add('af', IndepVarComp('af', np.zeros(n), pass_by_obj=True), promotes=['*'])
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
         self.add('init', CCInit(), promotes=['*'])
@@ -1077,7 +1061,7 @@ class CCBlade(Group):
     def __init__(self, nSector, n):
         super(CCBlade, self).__init__()
 
-        self.add('load_group', SweepGroup(nSector), promotes=['Uinf', 'tsr', 'pitch', 'Rtip', 'Omega', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'presweepTip', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'hubHt', 'B', 'af', 'bemoptions'])
+        self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'Omega', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'presweepTip', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'hubHt', 'B', 'af', 'bemoptions'])
         self.add('eval', CCEvaluate(n), promotes=['Uinf', 'Rtip', 'Omega', 'r', 'Rhub', 'B', 'precurve', 'presweep', 'presweepTip', 'precurveTip', 'precone', 'nSector', 'rotorR', 'rho', 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
 
         for i in range(nSector):
@@ -1309,7 +1293,7 @@ if __name__ == "__main__":
     loads['shearExp'] = shearExp
     loads['hubHt'] = hubHt
     loads['Uinf'] = Uinf
-    loads['tsr'] = Omega * loads['Rtip'] * pi / (30.0 * Uinf)
+    loads['Omega'] = Omega
     loads['pitch'] = np.radians(pitch)
     loads['azimuth'] = np.radians(azimuth)
     loads['af'] = af
@@ -1321,7 +1305,7 @@ if __name__ == "__main__":
     print 'Np', loads['Np']
     print 'Tp', loads['Tp']
     test_grad = open('partial_test_grad2.txt', 'w')
-    power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
+    # power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
     # power_partial = loads.check_partial_derivatives(out_stream=test_grad)
     # print "gradients calculated"
 
@@ -1356,14 +1340,12 @@ if __name__ == "__main__":
     ccblade['hubHt'] = hubHt
     ccblade['nSector'] = nSector
     ccblade['Uinf'] = Uinf
-    ccblade['tsr'] = tsr
+    ccblade['Omega'] = Omega
     ccblade['pitch'] = np.radians(pitch)
     ccblade['af'] = af
     ccblade['bemoptions'] = bemoptions
 
     ccblade.run()
-
-    ccblade.root.load_group.group1.brent1.list_connections()
 
     # test_grad = open('partial_test_grad.txt', 'w')
     # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
