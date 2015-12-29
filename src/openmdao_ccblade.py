@@ -207,7 +207,7 @@ class CCInit(Component):
         Rtip = params['Rtip']
         unknowns['Omega'] = Uinf*params['tsr']/Rtip * 30.0/pi
 
-    def jacobian(self, params, unknowns, resids):
+    def linearize(self, params, unknowns, resids):
 
         J = {}
 
@@ -274,7 +274,7 @@ class WindComponents(Component):
         unknowns['Vy'] = Vy
 
 
-    def jacobian(self, params, unknowns, resids):
+    def linearize(self, params, unknowns, resids):
         J = {}
 
         r = params['r']
@@ -549,7 +549,7 @@ class Angles(Component):
         self.phi_dx_t = phi_dx_t
 
 
-    def jacobian(self, params, unknowns, resids):
+    def linearize(self, params, unknowns, resids):
 
         J = {}
         phi = unknowns['phi']
@@ -748,7 +748,7 @@ class Flow(Component):
         # dNp_dX[ridx, :] *= pi/180.0
         # dTp_dX[ridx, :] *= pi/180.0
 
-    def jacobian(self, params, unknowns, resids):
+    def linearize(self, params, unknowns, resids):
         J = {}
 
         dalpha_dx = self.dalpha_dx
@@ -823,7 +823,7 @@ class Airfoils(Component):
         unknowns['cl'] = cl_total
         unknowns['cd'] = cd_total
 
-    def jacobian(self, params, unknowns, resids):
+    def linearize(self, params, unknowns, resids):
 
         J = {}
 
@@ -937,7 +937,7 @@ class DistributedAeroLoads(Component):
         unknowns['Tp'] = Tp
 
 
-    def jacobian(self, params, unknowns, resids):
+    def linearize(self, params, unknowns, resids):
 
         J = {}
 
@@ -983,7 +983,7 @@ class CCEvaluate(Component):
         self.add_param('Rtip', val=63.)
         self.add_param('Omega', shape=1)
         self.add_param('r', val=np.zeros(n))
-        self.add_param('B', val=3)
+        self.add_param('B', val=3, pass_by_obj=True)
         self.add_param('precurve', shape=n)
         self.add_param('presweep', shape=n)
         self.add_param('presweepTip', shape=1)
@@ -1239,7 +1239,7 @@ class CCEvaluate(Component):
         unknowns['T'] = T[0]
         unknowns['Q'] = Q[0]
 
-    def jacobian(self, params, unknowns, resids):
+    def linearize(self, params, unknowns, resids):
         J = {}
 
         dCP_drho = self.dCP_drho
