@@ -184,9 +184,9 @@ class CCInit(Component):
 
     def solve_nonlinear(self, params, unknowns, resids):
 
-        precone = np.radians(params['precone'])
-        tilt = np.radians(params['tilt'])
-        yaw = np.radians(params['yaw'])
+        precone = params['precone']
+        tilt = params['tilt']
+        yaw = params['yaw']
         shearExp = params['shearExp']
         Rtip = params['Rtip']
         precurveTip = params['precurveTip']
@@ -211,7 +211,7 @@ class CCInit(Component):
 
         J = {}
 
-        precone = np.radians(params['precone'])
+        precone = params['precone']
         precurveTip = params['precurveTip']
         Rtip = params['Rtip']
         tsr = params['tsr']
@@ -301,8 +301,8 @@ class WindComponents(Component):
         dVx_dr = np.diag(Vxd[:n, :])  # off-diagonal terms are known to be zero and not needed
         dVy_dr = np.diag(Vyd[:n, :])
 
-        dVx_dcurve = Vxd[n:2*n, :]  # tri-diagonal  (note: dVx_j / dcurve_i  i==row)
-        dVy_dcurve = Vyd[n:2*n, :]  # off-diagonal are actually all zero, but leave for convenience
+        dVx_dcurve = Vxd[n:2*n, :].T  # tri-diagonal  (note: dVx_j / dcurve_i  i==row)
+        dVy_dcurve = Vyd[n:2*n, :].T  # off-diagonal are actually all zero, but leave for convenience
 
         dVx_dsweep = np.diag(Vxd[2*n:3*n, :])  # off-diagonal terms are known to be zero and not needed
         dVy_dsweep = np.diag(Vyd[2*n:3*n, :])
@@ -1541,19 +1541,19 @@ if __name__ == "__main__":
     ccblade['Rtip'] = Rtip
     ccblade['r'] = r
     ccblade['chord'] = chord
-    ccblade['theta'] = theta
+    ccblade['theta'] = np.radians(theta)
     ccblade['B'] = B
     ccblade['rho'] = rho
     ccblade['mu'] = mu
-    ccblade['tilt'] = tilt
-    ccblade['precone'] = precone
-    ccblade['yaw'] = yaw
+    ccblade['tilt'] = np.radians(tilt)
+    ccblade['precone'] = np.radians(precone)
+    ccblade['yaw'] = np.radians(yaw)
     ccblade['shearExp'] = shearExp
     ccblade['hubHt'] = hubHt
     ccblade['nSector'] = nSector
     ccblade['Uinf'] = Uinf
     ccblade['tsr'] = tsr
-    ccblade['pitch'] = pitch
+    ccblade['pitch'] = np.radians(pitch)
 
     ccblade.run()
 

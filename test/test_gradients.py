@@ -21,20 +21,10 @@ from openmdao.api import Problem
 from openmdao_ccblade import CCAirfoil, CCBlade, LoadsGroup
 
 class TestGradientsClass(unittest.TestCase):
-
-    # def __init__(self, *args, **kwargs):
-    #     super(TestGradients, self).__init__(*args, **kwargs)
     @classmethod
     def setUpClass(cls):
        pass
 
-    # @staticmethod
-    # def disconnect():
-    #     TestGradientsClass.disconnect()
-    #
-    # @classmethod
-    # def tearDownClass(cls):
-    #     cls.disconnect()
 
 class TestGradients(TestGradientsClass):
 
@@ -123,7 +113,7 @@ class TestGradients(TestGradientsClass):
         loads.run()
         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
         loads_gradients = loads.check_total_derivatives_modified(out_stream=loads_test_total_gradients)
-        loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
+        # loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
         ## Power Gradients
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
         ccblade = Problem()
@@ -148,11 +138,11 @@ class TestGradients(TestGradientsClass):
         ccblade['pitch'] = np.radians(pitch)
 
         ccblade.run()
-        print "Generating gradients. Please wait..."
+        print "Generating gradients for Test 1. Please wait..."
         power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
         power_gradients = ccblade.check_total_derivatives_modified2(out_stream=power_test_total_gradients)
-        power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
-        print "Gradients generated."
+        # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
+        print "Gradients generated for Test 1."
         self.loads_gradients = loads_gradients
         self.power_gradients = power_gradients
         self.n = len(r)
@@ -1056,8 +1046,9 @@ class TestGradientsNotRotating(TestGradientsClass):
 
         loads.run()
         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
+        print "Generating gradients for Test 2. Please wait."
         loads_gradients = loads.check_total_derivatives_modified(out_stream=loads_test_total_gradients)
-
+        print "Gradients generated for Test 2."
         cls.loads_gradients = loads_gradients
         cls.n = len(r)
         cls.npts = 1  # len(Uinf)
@@ -1384,13 +1375,12 @@ class TestGradientsFreestreamArray(unittest.TestCase):
             ccblade.run()
 
             power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
-            print "Calculating gradients. Please wait..."
+            print "Generating gradients for Test " + str(i+3) + ". Please wait..."
             power_gradients_sub = ccblade.check_total_derivatives_modified2(out_stream=power_test_total_gradients)
-            print "Gradients " + str(i+1) + " calculated."
+            print "Gradients " + str(i+3) + " calculated."
             power_gradients[i] = power_gradients_sub
 
         cls.power_gradients = power_gradients
-
         cls.n = len(r)
         cls.npts = len(Uinf)
 
