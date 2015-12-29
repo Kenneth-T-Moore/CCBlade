@@ -16,8 +16,9 @@ import unittest
 import numpy as np
 from os import path
 import math
+from openmdao.api import Problem
 
-from ccblade import CCAirfoil, CCBlade
+from openmdao_ccblade import CCAirfoil, CCBlade
 
 
 class TestNREL5MW(unittest.TestCase):
@@ -36,24 +37,27 @@ class TestNREL5MW(unittest.TestCase):
         theta = np.array([13.308, 13.308, 13.308, 13.308, 11.480, 10.162, 9.011, 7.795,
                           6.544, 5.361, 4.188, 3.125, 2.319, 1.526, 0.863, 0.370, 0.106])
         B = 3  # number of blades
+        iterRe = 1
+        bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
 
         # atmosphere
         rho = 1.225
         mu = 1.81206e-5
 
+        import os
         afinit = CCAirfoil.initFromAerodynFile  # just for shorthand
-        basepath = path.join(path.dirname(path.realpath(__file__)), '5MW_AFFiles')
+        basepath = '5MW_AFFiles' + os.path.sep
 
         # load all airfoils
         airfoil_types = [0]*8
-        airfoil_types[0] = afinit(path.join(basepath, 'Cylinder1.dat'))
-        airfoil_types[1] = afinit(path.join(basepath, 'Cylinder2.dat'))
-        airfoil_types[2] = afinit(path.join(basepath, 'DU40_A17.dat'))
-        airfoil_types[3] = afinit(path.join(basepath, 'DU35_A17.dat'))
-        airfoil_types[4] = afinit(path.join(basepath, 'DU30_A17.dat'))
-        airfoil_types[5] = afinit(path.join(basepath, 'DU25_A17.dat'))
-        airfoil_types[6] = afinit(path.join(basepath, 'DU21_A17.dat'))
-        airfoil_types[7] = afinit(path.join(basepath, 'NACA64_A17.dat'))
+        airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+        airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+        airfoil_types[2] = afinit(basepath + 'DU40_A17.dat')
+        airfoil_types[3] = afinit(basepath + 'DU35_A17.dat')
+        airfoil_types[4] = afinit(basepath + 'DU30_A17.dat')
+        airfoil_types[5] = afinit(basepath + 'DU25_A17.dat')
+        airfoil_types[6] = afinit(basepath + 'DU21_A17.dat')
+        airfoil_types[7] = afinit(basepath + 'NACA64_A17.dat')
 
         # place at appropriate radial stations
         af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
@@ -66,13 +70,61 @@ class TestNREL5MW(unittest.TestCase):
         tilt = -5.0
         precone = 2.5
         yaw = 0.0
+        shearExp = 0.2
+        hubHt = 90.0
+        nSector = 8
 
+        Uinf = np.array([3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16., 17., 18., 19.,
+                         20., 21., 22., 23., 24., 25.])
+        Omega = np.array([6.972, 7.183, 7.506, 7.942, 8.469, 9.156, 10.296, 11.431,
+                          11.890, 12.100, 12.100, 12.100, 12.100, 12.100, 12.100,
+                          12.100, 12.100, 12.100, 12.100, 12.100, 12.100, 12.100, 12.100])
+        pitch = np.array([0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+                          3.823, 6.602, 8.668, 10.450, 12.055, 13.536, 14.920, 16.226,
+                          17.473, 18.699, 19.941, 21.177, 22.347, 23.469])
 
-        # create CCBlade object
-        self.rotor = CCBlade(r, chord, theta, af, Rhub, Rtip, B, rho, mu, precone, tilt, yaw, shearExp=0.2, hubHt=90.0)
+        ccblade = Problem()
+        root = ccblade.root = CCBlade(af)
+        ccblade.setup()
+        ccblade['Rhub'] = Rhub
+        ccblade['Rtip'] = Rtip
+        ccblade['r'] = r
+        ccblade['chord'] = chord
+        ccblade['theta'] = np.radians(theta)
+        ccblade['B'] = B
+        ccblade['rho'] = rho
+        ccblade['mu'] = mu
+        ccblade['tilt'] = np.radians(tilt)
+        ccblade['precone'] = np.radians(precone)
+        ccblade['yaw'] = np.radians(yaw)
+        ccblade['shearExp'] = shearExp
+        ccblade['hubHt'] = hubHt
+        ccblade['nSector'] = nSector
+        ccblade['Uinf'] = Uinf[0]
+        ccblade['tsr'] = Omega[0] * ccblade['Rtip'] * math.pi / (30.0 * Uinf[0])
+        ccblade['pitch'] = np.radians(pitch[0])
+        ccblade['azimuth'] = np.radians(90.0)
 
+        ccblade.run()
 
+        P = np.zeros(len(Uinf))
+        Q = np.zeros(len(Uinf))
+        T = np.zeros(len(Uinf))
 
+        for i in range(len(Uinf)):
+            ccblade['Uinf'] = Uinf[i]
+            ccblade['tsr'] = Omega[i] * ccblade['Rtip'] * math.pi / (30.0 * Uinf[i])
+            ccblade['pitch'] = np.radians(pitch[i])
+
+            ccblade.run()
+
+            P[i] = root.eval.unknowns['P']
+            Q[i] = root.eval.unknowns['Q']
+            T[i] = root.eval.unknowns['T']
+
+        self.P = P
+        self.Q = Q
+        self.T = T
 
 
     def test_thrust_torque(self):
@@ -103,7 +155,9 @@ class TestNREL5MW(unittest.TestCase):
         tilt = 5*math.pi/180.0
         Tref -= m_rotor*g*math.sin(tilt)  # remove weight of rotor that is included in reported results
 
-        P, T, Q = self.rotor.evaluate(Uinf, Omega, pitch)
+        P = self.P
+        T = self.T
+        Q = self.Q
 
         # import matplotlib.pyplot as plt
         # plt.plot(Uinf, P/1e6)
