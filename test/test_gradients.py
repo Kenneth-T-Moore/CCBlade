@@ -18,7 +18,7 @@ from math import pi
 from os import path
 from openmdao.api import Problem
 
-from openmdao_ccblade import CCAirfoil, CCBlade, LoadsGroup
+from openmdao_ccblade import CCAirfoil, CCBlade2, LoadsGroup2
 
 class TestGradientsClass(unittest.TestCase):
     @classmethod
@@ -88,7 +88,7 @@ class TestGradients(TestGradientsClass):
 
         ## Load gradients
         loads = Problem()
-        root = loads.root = LoadsGroup(af, azimuth)
+        root = loads.root = LoadsGroup2(af, azimuth)
         loads.setup()
 
         ##  RANDOM  CHECK
@@ -126,7 +126,7 @@ class TestGradients(TestGradientsClass):
         ## Power Gradients
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
         ccblade = Problem()
-        root = ccblade.root = CCBlade(af, nSector, bemoptions)
+        root = ccblade.root = CCBlade2(af, nSector, bemoptions)
         ccblade.setup()
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip

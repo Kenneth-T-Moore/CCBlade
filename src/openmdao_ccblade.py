@@ -1505,6 +1505,79 @@ class SweepGroup(Group):
             azimuth = pi/180.0*360.0*float(i)/nSector
             self.add('group'+str(i+1), Sweep(azimuth, n, af, bemoptions), promotes=['Uinf', 'pitch', 'Rtip', 'Omega', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'B'])
 
+class Sweep2(Group):
+    def __init__(self, azimuth, n, af, bemoptions):
+        super(Sweep, self).__init__()
+
+        self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
+        self.add('Rtip', IndepVarComp('Rtip', 0.0), promotes=['*'])
+        self.add('precone', IndepVarComp('precone', 0.0), promotes=['*'])
+        self.add('tilt', IndepVarComp('tilt', 0.0), promotes=['*'])
+        self.add('hubHt', IndepVarComp('hubHt', 0.0), promotes=['*'])
+        self.add('Uinf', IndepVarComp('Uinf', 0.0), promotes=['*'])
+        self.add('pitch', IndepVarComp('pitch', 0.0), promotes=['*'])
+        self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
+        self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
+        self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
+        self.add('azimuth', IndepVarComp('azimuth', 0.0), promotes=['*'])
+        self.add('tsr', IndepVarComp('tsr', 0.0), promotes=['*'])
+        self.add('r', IndepVarComp('r', val=np.zeros(n)), promotes=['*'])
+        self.add('chord', IndepVarComp('chord', val=np.zeros(n)), promotes=['*'])
+        self.add('theta', IndepVarComp('theta', val=np.zeros(n)), promotes=['*'])
+        self.add('precurve', IndepVarComp('precurve', val=np.zeros(n)), promotes=['*'])
+        self.add('presweep', IndepVarComp('presweep', val=np.zeros(n)), promotes=['*'])
+        self.add('init', CCInit(nSector), promotes=['*'])
+        self.add('wind', WindComponents(n), promotes=['*'])
+        self.add('mux', PHI_MUX(n), promotes=['*'])
+        for i in range(len(af)):
+            self.add('phiGroup'+str(i), TestPHI(af, nSector, bemoptions, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch'])
+            self.connect('r', 'phiGroup'+str(i)+'.r', src_indices=[i])
+            self.connect('chord', 'phiGroup'+str(i)+'.chord', src_indices=[i])
+            self.connect('theta', 'phiGroup'+str(i)+'.theta', src_indices=[i])
+            # self.connect('precurve', 'phiGroup'+str(i)+'.precurve', src_indices=[i])
+            # self.connect('presweep', 'phiGroup'+str(i)+'.presweep', src_indices=[i])
+            self.connect('Vx', 'phiGroup'+str(i)+'.Vx', src_indices=[i])
+            self.connect('Vy', 'phiGroup'+str(i)+'.Vy', src_indices=[i])
+            self.connect('phiGroup'+str(i)+'.phi_sub', 'phi'+str(i+1))
+        self.add('flow', Flow(af, bemoptions, n), promotes=['*'])
+        self.add('bem', Airfoils(af, n), promotes=['*'])
+        # self.add('loads', DistributedAeroLoads(af, n), promotes=['*'])
+        self.add('loads', DistributedAeroLoads(af, n), promotes=['chord', 'rho', 'phi', 'cl', 'cd', 'W'])
+
+class SweepGroup2(Group):
+    def __init__(self, af, nSector, bemoptions):
+        super(SweepGroup2, self).__init__()
+
+        r = np.array([2.8667, 5.6000, 8.3333, 11.7500, 15.8500, 19.9500, 24.0500,
+                      28.1500, 32.2500, 36.3500, 40.4500, 44.5500, 48.6500, 52.7500,
+                      56.1667, 58.9000, 61.6333])
+
+        n = len(r)
+        self.add('r', IndepVarComp('r', np.zeros(17)), promotes=['*'])
+        self.add('chord', IndepVarComp('chord', np.zeros(17)), promotes=['*'])
+        self.add('theta', IndepVarComp('theta', np.zeros(17)), promotes=['*'])
+        self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
+        self.add('Rtip', IndepVarComp('Rtip', 0.0), promotes=['*'])
+        self.add('precone', IndepVarComp('precone', 0.0), promotes=['*'])
+        self.add('tilt', IndepVarComp('tilt', 0.0), promotes=['*'])
+        self.add('hubHt', IndepVarComp('hubHt', 0.0), promotes=['*'])
+        self.add('Uinf', IndepVarComp('Uinf', 0.0), promotes=['*'])
+        self.add('pitch', IndepVarComp('pitch', 0.0), promotes=['*'])
+        self.add('precurve', IndepVarComp('precurve', np.zeros(17)), promotes=['*'])
+        self.add('presweep', IndepVarComp('presweep', np.zeros(17)), promotes=['*'])
+        self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
+        self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
+        self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
+        self.add('tsr', IndepVarComp('tsr', 0.0), promotes=['*'])
+
+        self.add('init', CCInit(nSector), promotes=['*'])
+
+        for i in range(nSector):
+            azimuth = pi/180.0*360.0*float(i)/nSector
+            self.add('group'+str(i+1), Sweep2(azimuth, n, af, bemoptions), promotes=['Uinf', 'pitch', 'Rtip', 'Omega', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'B'])
+
+
+
 class BracketTestComponent(Component):
 
     def __init__(self):
@@ -1645,43 +1718,41 @@ class Angles2(Component):
         # for i in range(1):
 
             # index dependent arguments
-        if self.i == 14:
-            pass
         args = (r, chord, theta, af[self.i], Vx, Vy, iterRe, pitch, rho, mu, Rhub, Rtip, B, bemoptions)
 
         resids['phi_sub'] = errf(unknowns['phi_sub'], *args)
 
-    def linearize(self, params, unknowns, resids):
-        J = {}
-        dphi_dx = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        # phi_dx = self.phi_dx_t
+    # def linearize(self, params, unknowns, resids):
+    #     J = {}
+    #     dphi_dx = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    #     # phi_dx = self.phi_dx_t
+    #
+    #     # # TODO check gradients for phi
+    #     # J['phi', 'chord'] = np.diag(dphi_dx[:, 1])
+    #     # J['phi', 'theta'] = np.diag(dphi_dx[:, 2])
+    #     # J['phi', 'Vx'] = np.diag(dphi_dx[:, 3])
+    #     # J['phi', 'Vy'] = np.diag(dphi_dx[:, 4])
+    #     # J['phi', 'r'] = np.diag(dphi_dx[:, 5])
+    #     # J['phi', 'Rhub'] = dphi_dx[:, 6]
+    #     # J['phi', 'Rtip'] = dphi_dx[:, 7]
+    #     # J['phi', 'pitch'] = dphi_dx[:, 8]
+    #
+    #     WW = np.zeros((1,17))
+    #     # TODO check gradients for phi
+    #     J['phi', 'chord'] = 0.0
+    #     J['phi', 'theta'] = 0.0
+    #     J['phi', 'Vx'] = 0.0
+    #     J['phi', 'Vy'] = 0.0
+    #     J['phi', 'r'] = 0.0
+    #     J['phi', 'Rhub'] = 0.
+    #     J['phi', 'Rtip'] = 0.
+    #     J['phi', 'pitch'] = 0.
+    #
+    #     return J
 
-        # # TODO check gradients for phi
-        # J['phi', 'chord'] = np.diag(dphi_dx[:, 1])
-        # J['phi', 'theta'] = np.diag(dphi_dx[:, 2])
-        # J['phi', 'Vx'] = np.diag(dphi_dx[:, 3])
-        # J['phi', 'Vy'] = np.diag(dphi_dx[:, 4])
-        # J['phi', 'r'] = np.diag(dphi_dx[:, 5])
-        # J['phi', 'Rhub'] = dphi_dx[:, 6]
-        # J['phi', 'Rtip'] = dphi_dx[:, 7]
-        # J['phi', 'pitch'] = dphi_dx[:, 8]
-
-        WW = np.zeros((1,17))
-        # TODO check gradients for phi
-        J['phi', 'chord'] = 0.0
-        J['phi', 'theta'] = 0.0
-        J['phi', 'Vx'] = 0.0
-        J['phi', 'Vy'] = 0.0
-        J['phi', 'r'] = 0.0
-        J['phi', 'Rhub'] = 0.
-        J['phi', 'Rtip'] = 0.
-        J['phi', 'pitch'] = 0.
-
-        return J
-
-class TestPHI_TOTAL(Group):
+class LoadsGroup2(Group):
     def __init__(self, af, nSector, bemoptions):
-        super(TestPHI_TOTAL, self).__init__()
+        super(LoadsGroup2, self).__init__()
         self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
         self.add('Rtip', IndepVarComp('Rtip', 0.0), promotes=['*'])
         self.add('precone', IndepVarComp('precone', 0.0), promotes=['*'])
@@ -1712,6 +1783,9 @@ class TestPHI_TOTAL(Group):
             self.connect('Vx', 'phiGroup'+str(i)+'.Vx', src_indices=[i])
             self.connect('Vy', 'phiGroup'+str(i)+'.Vy', src_indices=[i])
             self.connect('phiGroup'+str(i)+'.phi_sub', 'phi'+str(i+1))
+        self.add('flow', Flow(af, bemoptions, n), promotes=['*'])
+        self.add('bem', Airfoils(af, n), promotes=['*'])
+        self.add('loads', DistributedAeroLoads(af, n), promotes=['*'])
 
 class TestPHI(Group):
     def __init__(self, af, nSector, bemoptions, i):
@@ -1763,7 +1837,7 @@ class PHI_MUX(Component):
 def test_bracket(n, af, bemoptions):
 
         p = Problem()
-        p.root = TestPHI_TOTAL(af, nSector, bemoptions)
+        p.root = LoadsGroup2(af, nSector, bemoptions)
         p.setup()  # check=False)
 
         p['Rhub'] = Rhub
@@ -1803,7 +1877,26 @@ def test_bracket(n, af, bemoptions):
         # angles = p.root.angles
         # wind = p.root.wind
         print "phi", p.root.unknowns['phi']
+        print "Np", p.root.unknowns['Np']
         # print "phi manual", phi_star
+
+
+class CCBlade2(Group):
+
+    def __init__(self, af, nSector, bemoptions):
+        super(CCBlade2, self).__init__()
+
+        n = len(af)
+
+        self.add('load_group', SweepGroup(af, nSector, bemoptions), promotes=['Uinf', 'tsr', 'pitch', 'Rtip', 'Omega', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'nSector', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'presweepTip', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'hubHt', 'B'])
+        self.add('eval', CCEvaluate(af, n), promotes=['Uinf', 'Rtip', 'Omega', 'r', 'Rhub', 'B', 'precurve', 'presweep', 'presweepTip', 'precurveTip', 'precone', 'nSector', 'rotorR', 'rho', 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+
+        for i in range(8):
+            self.connect('load_group.group' + str(i+1) + '.loads.Np', 'eval.Np' + str(i+1))
+            self.connect('load_group.group' + str(i+1) + '.loads.Tp', 'eval.Tp' + str(i+1))
+
+        self.add('obj_cmp', ExecComp('obj = -CP', CP=1.0), promotes=['*'])
+
 
 class CCBlade(Group):
 
@@ -1820,6 +1913,8 @@ class CCBlade(Group):
             self.connect('load_group.group' + str(i+1) + '.loads.Tp', 'eval.Tp' + str(i+1))
 
         self.add('obj_cmp', ExecComp('obj = -CP', CP=1.0), promotes=['*'])
+
+
 
 class LoadsGroup(Group):
     def __init__(self, af, nSector):
@@ -1917,51 +2012,51 @@ if __name__ == "__main__":
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     azimuth = 90.
     n = 17
-    test_bracket(n, af, bemoptions)
+    # test_bracket(n, af, bemoptions)
 
     ## Load gradients
-    loads = Problem()
-    root = loads.root = LoadsGroup(af, azimuth)
-    loads.setup()
-
-    loads['Rhub'] = Rhub
-    loads['Rtip'] = Rtip
-    loads['r'] = r
-    loads['chord'] = chord
-    loads['theta'] = np.radians(theta)
-    # loads['B'] = B
-    loads['rho'] = rho
-    loads['mu'] = mu
-    loads['tilt'] = np.radians(tilt)
-    loads['precone'] = np.radians(precone)
-    loads['yaw'] = np.radians(yaw)
-    loads['shearExp'] = shearExp
-    loads['hubHt'] = hubHt
-    loads['nSector'] = nSector
-    loads['Uinf'] = Uinf
-    loads['tsr'] = Omega * loads['Rtip'] * pi / (30.0 * Uinf)
-    loads['pitch'] = np.radians(pitch)
-    loads['azimuth'] = np.radians(azimuth)
-
-    loads.run()
+    # loads = Problem()
+    # root = loads.root = LoadsGroup(af, azimuth)
+    # loads.setup()
+    #
+    # loads['Rhub'] = Rhub
+    # loads['Rtip'] = Rtip
+    # loads['r'] = r
+    # loads['chord'] = chord
+    # loads['theta'] = np.radians(theta)
+    # # loads['B'] = B
+    # loads['rho'] = rho
+    # loads['mu'] = mu
+    # loads['tilt'] = np.radians(tilt)
+    # loads['precone'] = np.radians(precone)
+    # loads['yaw'] = np.radians(yaw)
+    # loads['shearExp'] = shearExp
+    # loads['hubHt'] = hubHt
+    # loads['nSector'] = nSector
+    # loads['Uinf'] = Uinf
+    # loads['tsr'] = Omega * loads['Rtip'] * pi / (30.0 * Uinf)
+    # loads['pitch'] = np.radians(pitch)
+    # loads['azimuth'] = np.radians(azimuth)
+    #
+    # loads.run()
 
 
     ccblade = Problem()
-    ccblade.root = CCBlade(af, nSector, bemoptions)
+    ccblade.root = CCBlade2(af, nSector, bemoptions)
 
     ### SETUP OPTIMIZATION
-    # ccblade.driver = pyOptSparseDriver()
-    # ccblade.driver.options['optimizer'] = 'SNOPT' #'SLSQP'
+    ccblade.driver = pyOptSparseDriver()
+    ccblade.driver.options['optimizer'] = 'SNOPT' #'SLSQP'
     # ccblade.driver.options['tol'] = 1.0e-8
 
-    # ccblade.driver.add_desvar('tsr', lower=1.5, upper=14.0)
-    #
-    # ccblade.driver.add_objective('obj')
+    ccblade.driver.add_desvar('tsr', lower=1.5, upper=14.0)
 
-    # recorder = SqliteRecorder('recorder')
-    # recorder.options['record_params'] = True
-    # recorder.options['record_metadata'] = True
-    # CCBlade.driver.add_recorder(recorder)
+    ccblade.driver.add_objective('obj')
+
+    recorder = SqliteRecorder('recorder')
+    recorder.options['record_params'] = True
+    recorder.options['record_metadata'] = True
+    ccblade.driver.add_recorder(recorder)
 
 
 
@@ -1989,6 +2084,6 @@ if __name__ == "__main__":
 
     test_grad = open('partial_test_grad.txt', 'w')
     # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
-    power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
+    # power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
 
     print 'CP', ccblade.root.eval.unknowns['CP']

@@ -18,7 +18,7 @@ from os import path
 import math
 from openmdao.api import Problem
 
-from openmdao_ccblade import CCAirfoil, CCBlade
+from openmdao_ccblade import CCAirfoil, CCBlade2
 
 
 class TestNREL5MW(unittest.TestCase):
@@ -84,7 +84,7 @@ class TestNREL5MW(unittest.TestCase):
                           17.473, 18.699, 19.941, 21.177, 22.347, 23.469])
 
         ccblade = Problem()
-        root = ccblade.root = CCBlade(af,nSector,bemoptions)
+        root = ccblade.root = CCBlade2(af,nSector,bemoptions)
         ccblade.setup()
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip
