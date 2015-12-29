@@ -5,8 +5,8 @@ import warnings
 from math import cos, sin, pi
 import numpy as np
 import _bem
-from openmdao.api import Component
-from openmdao.api import ExecComp, IndepVarComp, Group, Problem
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder
+from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from scipy.optimize import brentq
 from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
@@ -1293,7 +1293,7 @@ class CCEvaluate(Component):
 
         J['CT', 'Uinf'] = dCT_dUinf
         J['CT', 'Rtip'] = self.dT_dRtip / (q * A)
-        J['CT', 'Omega'] = 0
+        J['CT', 'Omega'] = 0.0
         J['CT', 'r'] = (self.dT_dr / (q * A))
         J['CT', 'precurve'] = self.dT_dprecurve / (q * A)
         J['CT', 'presweep'] = self.dT_dpresweep / (q * A)
@@ -1307,20 +1307,20 @@ class CCEvaluate(Component):
 
         J['CQ', 'Uinf'] = dCQ_dUinf
         J['CQ', 'Rtip'] = self.dQ_dRtip / (q * rotorR * A)
-        J['CQ', 'Omega'] = 0
-        J['CQ', 'r'] = self.dQ_dr /  (q * rotorR * A)
-        J['CQ', 'precurve'] = self.dQ_dprecurve /  (q * rotorR * A)
-        J['CQ', 'presweep'] = self.dQ_dpresweep/  (q * rotorR * A)
-        J['CQ', 'presweepTip'] = self.dQ_dpresweeptip /  (q * rotorR * A)
+        J['CQ', 'Omega'] = 0.0
+        J['CQ', 'r'] = self.dQ_dr / (q * rotorR * A)
+        J['CQ', 'precurve'] = self.dQ_dprecurve / (q * rotorR * A)
+        J['CQ', 'presweep'] = self.dQ_dpresweep/ (q * rotorR * A)
+        J['CQ', 'presweepTip'] = self.dQ_dpresweeptip / (q * rotorR * A)
         J['CQ', 'precurveTip'] = self.dQ_dprecurvetip / (q * rotorR * A)
         J['CQ', 'precone'] = self.dQ_dprecone / (q * rotorR * A)
         J['CQ', 'rho'] = dCQ_drho
-        J['CQ', 'Rhub'] = self.dQ_dRhub /  (q * rotorR * A)
+        J['CQ', 'Rhub'] = self.dQ_dRhub / (q * rotorR * A)
         J['CQ', 'rotorR'] = dCQ_drotorR
 
 
 
-        # J['P', 'Uinf'] =
+        J['P', 'Uinf'] = 0.0
         J['P', 'Rtip'] = self.dP_dRtip
         J['P', 'Omega'] = dP_dOmega
         J['P', 'r'] = self.dP_dr
@@ -1329,35 +1329,35 @@ class CCEvaluate(Component):
         J['P', 'presweepTip'] = self.dP_dpresweeptip
         J['P', 'precurveTip'] = self.dP_dprecurvetip
         J['P', 'precone'] = self.dP_dprecone
-        # J['P', 'rho'] = 1
+        J['P', 'rho'] = 0.0
         J['P', 'Rhub'] = self.dP_dRhub
-        # J['P', 'rotorR'] = 1
+        J['P', 'rotorR'] = 0.0
 
 
-        # J['T', 'Uinf'] = 1
+        J['T', 'Uinf'] = 0.0
         J['T', 'Rtip'] = self.dT_dRtip
-        # J['T', 'Omega'] = 1
+        J['T', 'Omega'] = 0.0
         J['T', 'r'] = self.dT_dr
         J['T', 'precurve'] = self.dT_dprecurve
         J['T', 'presweep'] = self.dT_dpresweep
         J['T', 'presweepTip'] = self.dT_dpresweeptip
         J['T', 'precurveTip'] = self.dT_dprecurvetip
         J['T', 'precone'] = self.dT_dprecone
-        # J['T', 'rho'] = 1
+        J['T', 'rho'] = 0.0
         J['T', 'Rhub'] = self.dT_dRhub
         J['T', 'rotorR'] = 0
 
 
-        # J['Q', 'Uinf'] = 1
+        J['Q', 'Uinf'] = 0.0
         J['Q', 'Rtip'] = self.dQ_dRtip
-        # J['Q', 'Omega'] = 1
+        J['Q', 'Omega'] = 0.0
         J['Q', 'r'] = self.dQ_dr
         J['Q', 'precurve'] = self.dQ_dprecurve
         J['Q', 'presweep'] = self.dQ_dpresweep
         J['Q', 'presweepTip'] = self.dQ_dpresweeptip
         J['Q', 'precurveTip'] = self.dQ_dprecurvetip
         J['Q', 'precone'] = self.dQ_dprecone
-        # J['Q', 'rho'] = 1
+        J['Q', 'rho'] = 0.0
         J['Q', 'Rhub'] = self.dQ_dRhub
         J['Q', 'rotorR'] = 0
 
@@ -1399,6 +1399,7 @@ class SweepGroup(Group):
         self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
         self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
         self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
+        self.add('tsr', IndepVarComp('tsr', 0.0), promotes=['*'])
 
         self.add('init', CCInit(nSector), promotes=['*'])
 
@@ -1518,19 +1519,18 @@ if __name__ == "__main__":
     azimuth = 90.
 
     ccblade = Problem()
-    root = ccblade.root = CCBlade(af, nSector, bemoptions)
+    ccblade.root = CCBlade(af, nSector, bemoptions)
 
     ### SETUP OPTIMIZATION
-    # CCBlade.driver = pyOptSparseDriver()
-    # CCBlade.driver.options['optimizer'] = 'SNOPT' #'SLSQP'
-    # # CCBlade.driver.options['tol'] = 1.0e-8
-    #
-    # CCBlade.driver.add_desvar('tsr', low=1.5,
-    #          high=14.0)
-    #
-    # CCBlade.driver.add_objective('obj')
-    #
-    # recorder = SqliteRecorder('para')
+    ccblade.driver = pyOptSparseDriver()
+    ccblade.driver.options['optimizer'] = 'SNOPT' #'SLSQP'
+    # CCBlade.driver.options['tol'] = 1.0e-8
+
+    ccblade.driver.add_desvar('tsr', lower=1.5, upper=14.0)
+
+    ccblade.driver.add_objective('obj')
+
+    # recorder = SqliteRecorder('recorder')
     # recorder.options['record_params'] = True
     # recorder.options['record_metadata'] = True
     # CCBlade.driver.add_recorder(recorder)
@@ -1561,4 +1561,4 @@ if __name__ == "__main__":
     # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
     # power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
 
-    print 'CP', root.eval.unknowns['CP']
+    print 'CP', ccblade.root.eval.unknowns['CP']

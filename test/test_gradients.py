@@ -91,6 +91,23 @@ class TestGradients(TestGradientsClass):
         root = loads.root = LoadsGroup(af, azimuth)
         loads.setup()
 
+        ##  RANDOM  CHECK
+        Rhub = (np.random.random() + 0.5) * Rhub
+        Rtip = (np.random.random() + 0.5) * Rtip
+        # r = (np.random.random() + 0.5) * r
+        chord = (np.random.random() + 0.5) * chord
+        theta = (np.random.random() + 0.5) * theta
+        rho = (np.random.random() + 0.5) * rho
+        mu = (np.random.random() + 0.5) * mu
+        tilt = (np.random.random() + 0.5) * tilt
+        precone = (np.random.random() + 0.5) * precone
+        yaw = (np.random.random() + 0.5) * (yaw + 2.)
+        hubHt = (np.random.random() + 0.5) * hubHt
+        Uinf = (np.random.random() + 0.5) * Uinf
+        pitch = (np.random.random() + 0.5) * (pitch +  3.0)
+        hubHt = (np.random.random() + 0.5) * hubHt
+        azimuth = (np.random.random() + 0.5) * azimuth
+
         loads['Rhub'] = Rhub
         loads['Rtip'] = Rtip
         loads['r'] = r
@@ -112,7 +129,7 @@ class TestGradients(TestGradientsClass):
 
         loads.run()
         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
-        loads_gradients = loads.check_total_derivatives_modified(out_stream=loads_test_total_gradients)
+        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp', 'Omega'])
         # loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
         ## Power Gradients
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
@@ -140,7 +157,7 @@ class TestGradients(TestGradientsClass):
         ccblade.run()
         print "Generating gradients for Test 1. Please wait..."
         power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
-        power_gradients = ccblade.check_total_derivatives_modified2(out_stream=power_test_total_gradients)
+        power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q', 'Omega'])
         # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
         print "Gradients generated for Test 1."
         self.loads_gradients = loads_gradients
@@ -1047,7 +1064,7 @@ class TestGradientsNotRotating(TestGradientsClass):
         loads.run()
         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
         print "Generating gradients for Test 2. Please wait."
-        loads_gradients = loads.check_total_derivatives_modified(out_stream=loads_test_total_gradients)
+        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients)
         print "Gradients generated for Test 2."
         cls.loads_gradients = loads_gradients
         cls.n = len(r)
@@ -1376,7 +1393,7 @@ class TestGradientsFreestreamArray(unittest.TestCase):
 
             power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
             print "Generating gradients for Test " + str(i+3) + ". Please wait..."
-            power_gradients_sub = ccblade.check_total_derivatives_modified2(out_stream=power_test_total_gradients)
+            power_gradients_sub = ccblade.check_total_derivatives(out_stream=power_test_total_gradients)
             print "Gradients " + str(i+3) + " calculated."
             power_gradients[i] = power_gradients_sub
 
