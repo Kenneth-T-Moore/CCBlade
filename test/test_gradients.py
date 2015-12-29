@@ -92,21 +92,13 @@ class TestGradients(TestGradientsClass):
         loads.setup()
 
         ##  RANDOM  CHECK
-        Rhub = (np.random.random() + 0.5) * Rhub
-        Rtip = (np.random.random() + 0.5) * Rtip
-        # r = (np.random.random() + 0.5) * r
-        chord = (np.random.random() + 0.5) * chord
-        theta = (np.random.random() + 0.5) * theta
-        rho = (np.random.random() + 0.5) * rho
-        mu = (np.random.random() + 0.5) * mu
-        tilt = (np.random.random() + 0.5) * tilt
-        precone = (np.random.random() + 0.5) * precone
-        yaw = (np.random.random() + 0.5) * (yaw + 2.)
-        hubHt = (np.random.random() + 0.5) * hubHt
-        Uinf = (np.random.random() + 0.5) * Uinf
-        pitch = (np.random.random() + 0.5) * (pitch +  3.0)
-        hubHt = (np.random.random() + 0.5) * hubHt
-        azimuth = (np.random.random() + 0.5) * azimuth
+        # # Rhub = (np.random.random() + 0.5) * Rhub
+        # # Rtip = (np.random.random() + 0.5) * Rtip
+        # tilt = (np.random.random() + 0.5) * tilt
+        # precone = (np.random.random() + 0.5) * precone
+        # yaw = (np.random.random() + 0.5) * (yaw + 2.)
+        # Uinf = (np.random.random() + 0.5) * Uinf
+        # # azimuth = (np.random.random() + 0.5) * azimuth
 
         loads['Rhub'] = Rhub
         loads['Rtip'] = Rtip
@@ -129,8 +121,8 @@ class TestGradients(TestGradientsClass):
 
         loads.run()
         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
-        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp', 'Omega'])
-        # loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
+        # loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp', 'Omega'])
+        loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
         ## Power Gradients
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
         ccblade = Problem()

@@ -5,12 +5,14 @@ import warnings
 from math import cos, sin, pi
 import numpy as np
 import _bem
-from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder, ScipyGMRES
 from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from scipy.optimize import brentq
 from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
 from airfoilprep import Airfoil
+from brent import Brent
+
 
 class AirfoilInterface(Interface):
     """Interface for airfoil aerodynamic analysis."""
@@ -227,6 +229,113 @@ class CCInit(Component):
 
         return J
 
+class WindComponents2(Component):
+    """
+    WindComponents
+
+    Outputs: Vx, Vy
+
+    """
+
+    def __init__(self, n):
+        super(WindComponents2, self).__init__()
+        self.add_param('r', val=0.0)
+        self.add_param('precurve', val=0.0)
+        self.add_param('presweep', shape=1)
+        self.add_param('Uinf', shape=1)
+        self.add_param('precone', shape=1)
+        self.add_param('azimuth', val=0.0)
+        self.add_param('tilt', shape=1)
+        self.add_param('yaw', shape=1)
+        self.add_param('Omega', shape=1)
+        self.add_param('shearExp', shape=1)
+        self.add_param('hubHt', shape=1)
+
+        self.add_output('Vx', shape=1)
+        self.add_output('Vy', shape=1)
+
+        self.fd_options['form'] = 'central'
+
+    def solve_nonlinear(self, params, unknowns, resids):
+
+        r = params['r']
+        precurve = params['precurve']
+        presweep = params['presweep']
+        precone = params['precone']
+        yaw = params['yaw']
+        tilt = params['tilt']
+        Uinf = params['Uinf']
+        Omega = params['Omega']
+        hubHt = params['hubHt']
+        shearExp = params['shearExp']
+        azimuth = params['azimuth']
+
+        Vx, Vy = _bem.windcomponents(r, precurve, presweep, precone, yaw, tilt, azimuth, Uinf, Omega, hubHt, shearExp)
+
+        unknowns['Vx'] = Vx
+        unknowns['Vy'] = Vy
+
+
+    def linearize(self, params, unknowns, resids):
+        J = {}
+
+        r = params['r']
+        precurve = params['precurve']
+        presweep = params['presweep']
+        precone = params['precone']
+        yaw = params['yaw']
+        tilt = params['tilt']
+        azimuth = params['azimuth']
+        Uinf = params['Uinf']
+        Omega = params['Omega']
+        hubHt = params['hubHt']
+        shearExp = params['shearExp']
+
+        # y = [r, precurve, presweep, precone, tilt, hubHt, yaw, azimuth, Uinf, Omega]  (derivative order)
+        n = 1 #  len(r)
+        dy_dy = np.eye(3*n+7)
+
+        _, Vxd, _, Vyd = _bem.windcomponents_dv(r, dy_dy[:, :n], precurve, dy_dy[:, n:2*n],
+            presweep, dy_dy[:, 2*n:3*n], precone, dy_dy[:, 3*n], yaw, dy_dy[:, 3*n+3],
+            tilt, dy_dy[:, 3*n+1], azimuth, dy_dy[:, 3*n+4], Uinf, dy_dy[:, 3*n+5],
+            Omega, dy_dy[:, 3*n+6], hubHt, dy_dy[:, 3*n+2], shearExp)
+
+        dVx_dr = np.diag(Vxd[:n, :])  # off-diagonal terms are known to be zero and not needed
+        dVy_dr = np.diag(Vyd[:n, :])
+
+        dVx_dcurve = Vxd[n:2*n, :].T  # tri-diagonal  (note: dVx_j / dcurve_i  i==row)
+        dVy_dcurve = Vyd[n:2*n, :].T  # off-diagonal are actually all zero, but leave for convenience
+
+        dVx_dsweep = np.diag(Vxd[2*n:3*n, :])  # off-diagonal terms are known to be zero and not needed
+        dVy_dsweep = np.diag(Vyd[2*n:3*n, :])
+
+        # w = [r, presweep, precone, tilt, hubHt, yaw, azimuth, Uinf, Omega]
+        dVx_dw = np.vstack((dVx_dr, dVx_dsweep, Vxd[3*n:, :]))
+        dVy_dw = np.vstack((dVy_dr, dVy_dsweep, Vyd[3*n:, :]))
+
+        J['Vx', 'r'] = Vxd[:n, :]
+        J['Vy', 'r'] = Vyd[:n, :]
+        J['Vx', 'presweep'] = Vxd[2*n:3*n, :]
+        J['Vy', 'presweep'] = Vyd[2*n:3*n, :]
+        J['Vx', 'precone'] = dVx_dw[2]
+        J['Vy', 'precone'] = dVy_dw[2]
+        J['Vx', 'tilt'] = dVx_dw[3]
+        J['Vy', 'tilt'] = dVy_dw[3]
+        J['Vx', 'hubHt'] = dVx_dw[4]
+        J['Vy', 'hubHt'] = dVy_dw[4]
+        J['Vx', 'yaw'] = dVx_dw[5]
+        J['Vy', 'yaw'] = dVy_dw[5]
+        J['Vx', 'azimuth'] = dVx_dw[6]
+        J['Vy', 'azimuth'] = dVy_dw[6]
+        J['Vx', 'Uinf'] = dVx_dw[7]
+        J['Vy', 'Uinf'] = dVy_dw[7]
+        J['Vx', 'Omega'] = dVx_dw[8]
+        J['Vy', 'Omega'] = dVy_dw[8]
+        J['Vx', 'precurve'] = dVx_dcurve
+        J['Vy', 'precurve'] = dVy_dcurve
+
+        return J
+
 class WindComponents(Component):
     """
     WindComponents
@@ -356,7 +465,7 @@ class Angles(Component):
         self.af = af
         self.bemoptions = bemoptions
         self.fd_options['form'] = 'central'
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
 
     def __errorFunction(self, phi, r, chord, theta, af, Vx, Vy, iterRe, pitch, rho, mu, Rhub, Rtip, B, bemoptions):
         """strip other outputs leaving only residual for Brent's method"""
@@ -371,15 +480,11 @@ class Angles(Component):
         a = 0.0
         ap = 0.0
 
-        if iterRe == 0.0:
-            iterRe = int(iterRe)
-        for i in range(iterRe):
-
-            alpha, W, Re = _bem.relativewind(phi, a, ap, Vx, Vy, pitch,
+        alpha, W, Re = _bem.relativewind(phi, a, ap, Vx, Vy, pitch,
                                              chord, theta, rho, mu)
-            cl, cd = af.evaluate(alpha, Re)
+        cl, cd = af.evaluate(alpha, Re)
 
-            fzero, a, ap = _bem.inductionfactors(r, chord, Rhub, Rtip, phi,
+        fzero, a, ap = _bem.inductionfactors(r, chord, Rhub, Rtip, phi,
                                                  cl, cd, B, Vx, Vy, **bemoptions)
 
         return fzero, a, ap
@@ -514,14 +619,7 @@ class Angles(Component):
             # else:
             #     phi_dx = np.zeros(9)
 
-            # if a != 0 and ap != 0:
-            #     phi_dx = (da_dx[0]**-1 * da_dx / a  + dap_dx[0]**-1 * dap_dx / ap)
-            # elif a != 0:
-            #     phi_dx = (da_dx[0]**-1 * da_dx / a)
-            # elif ap != 0:
-            #     phi_dx = (dap_dx[0]**-1 * dap_dx / ap)
-            # else:
-            #     phi_dx = np.zeros(9)
+
 
             # if a != 0 and ap != 0:
             #     phi_dx = (da_dx[0]**-1 * a  * da_dx + dap_dx[0]**-1 * dap_dx * ap )/2.0
@@ -1407,6 +1505,306 @@ class SweepGroup(Group):
             azimuth = pi/180.0*360.0*float(i)/nSector
             self.add('group'+str(i+1), Sweep(azimuth, n, af, bemoptions), promotes=['Uinf', 'pitch', 'Rtip', 'Omega', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'B'])
 
+class BracketTestComponent(Component):
+
+    def __init__(self):
+        super(BracketTestComponent, self).__init__()
+
+        # in
+        self.add_param('a', .3)
+        self.add_param('ap', .01)
+        self.add_param('lambda_r', 7.)
+
+        # states
+        self.add_state('phi', 0.)
+
+    def solve_nonlinear(self, params, unknowns, resids):
+        pass
+
+    def apply_nonlinear(self, p, u, r):
+
+        r['phi'] = np.sin(u['phi'])/(1-p['a']) - np.cos(u['phi'])/p['lambda_r']/(1+p['ap'])
+        # print u['phi'], p['a'], p['lambda_r'], 1+p['ap'], r['phi']
+
+class Angles2(Component):
+    def __init__(self, af, bemoptions, n, i):
+        super(Angles2, self).__init__()
+
+        self.add_param('pitch', shape=1)
+        self.add_param('Rtip', shape=1)
+        self.add_param('Vx', shape=1)
+        self.add_param('Vy', shape=1)
+        self.add_param('Omega', shape=1)
+        self.add_param('r', val=0.0)
+        self.add_param('chord', val=0.0)
+        self.add_param('theta', shape=1)
+        self.add_param('rho', shape=1)
+        self.add_param('mu', shape=1)
+        self.add_param('Rhub', shape=1)
+        self.add_param('B', val=3, pass_by_obj=True)
+
+        self.add_state('phi_sub', val=0.0) # 0.0)
+
+        self.af = af
+        self.bemoptions = bemoptions
+        self.fd_options['form'] = 'central'
+        self.i = i
+        # self.fd_options['force_fd'] = True
+
+    def __errorFunction(self, phi, r, chord, theta, af, Vx, Vy, iterRe, pitch, rho, mu, Rhub, Rtip, B, bemoptions):
+        """strip other outputs leaving only residual for Brent's method"""
+
+        fzero, a, ap = self.__runBEM(phi, r, chord, theta, af, Vx, Vy, iterRe, pitch, rho, mu, Rhub, Rtip, B, bemoptions)
+
+        return fzero
+
+    def __runBEM(self, phi, r, chord, theta, af, Vx, Vy, iterRe, pitch, rho, mu, Rhub, Rtip, B, bemoptions):
+        """residual of BEM method and other corresponding variables"""
+
+        a = 0.0
+        ap = 0.0
+
+        alpha, W, Re = _bem.relativewind(phi, a, ap, Vx, Vy, pitch,
+                                             chord, theta, rho, mu)
+        cl, cd = af.evaluate(alpha, Re)
+
+        fzero, a, ap = _bem.inductionfactors(r, chord, Rhub, Rtip, phi,
+                                                 cl, cd, B, Vx, Vy, **bemoptions)
+
+        return fzero, a, ap
+
+    def __residualDerivatives(self, phi, r, chord, theta, af, Vx, Vy, iterRe, pitch, rho, mu, Rhub, Rtip, B, bemoptions):
+        """derivatives of fzero, a, ap"""
+
+        if iterRe != 1:
+            ValueError('Analytic derivatives not supplied for case with iterRe > 1')
+
+        # x = [phi, chord, theta, Vx, Vy, r, Rhub, Rtip, pitch]  (derivative order)
+
+        # alpha, Re (analytic derivaives)
+        a = 0.0
+        ap = 0.0
+        alpha, W, Re = _bem.relativewind(phi, a, ap, Vx, Vy, pitch,
+                                         chord, theta, rho, mu)
+
+        dalpha_dx = np.array([1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0])
+        dRe_dx = np.array([0.0, Re/chord, 0.0, Re*Vx/W**2, Re*Vy/W**2, 0.0, 0.0, 0.0, 0.0])
+
+        # cl, cd (spline derivatives)
+        cl, cd = af.evaluate(alpha, Re)
+        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = af.derivatives(alpha, Re)
+
+        # chain rule
+        dcl_dx = dcl_dalpha*dalpha_dx + dcl_dRe*dRe_dx
+        dcd_dx = dcd_dalpha*dalpha_dx + dcd_dRe*dRe_dx
+
+        # residual, a, ap (Tapenade)
+        dx_dx = np.eye(9)
+
+        fzero, a, ap, dR_dx, da_dx, dap_dx = _bem.inductionfactors_dv(r, chord, Rhub, Rtip,
+            phi, cl, cd, B, Vx, Vy, dx_dx[5, :], dx_dx[1, :], dx_dx[6, :], dx_dx[7, :],
+            dx_dx[0, :], dcl_dx, dcd_dx, dx_dx[3, :], dx_dx[4, :], **bemoptions)
+
+        return dR_dx, da_dx, dap_dx
+
+
+    def solve_nonlinear(self, params, unknowns, resids):
+        pass
+
+    def apply_nonlinear(self, params, unknowns, resids):
+
+        Vx = params['Vx']
+        Vy = params['Vy']
+        Omega = params['Omega']
+        r = params['r']
+        chord = params['chord']
+        theta = params['theta']
+        pitch = params['pitch']
+        rho = params['rho']
+        mu = params['mu']
+        Rhub = params['Rhub']
+        Rtip = params['Rtip']
+
+        af = self.af
+        iterRe = 1
+        B = params['B']
+        bemoptions = self.bemoptions
+
+        # n = len(r)
+        errf = self.__errorFunction
+        rotating = (Omega != 0)
+
+        # self.dalpha_dx = np.zeros((n, 9))
+        # self.W = np.zeros(n)
+        # self.dW_dx = np.zeros((n, 9))
+        # self.dRe_dx = np.zeros((n, 9))
+
+        # phi_t = np.zeros(n)
+        # phi_dx_t = np.zeros((n, 9))
+
+        # for i in range(1):
+
+            # index dependent arguments
+        if self.i == 14:
+            pass
+        args = (r, chord, theta, af[self.i], Vx, Vy, iterRe, pitch, rho, mu, Rhub, Rtip, B, bemoptions)
+
+        resids['phi_sub'] = errf(unknowns['phi_sub'], *args)
+
+    def linearize(self, params, unknowns, resids):
+        J = {}
+        dphi_dx = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        # phi_dx = self.phi_dx_t
+
+        # # TODO check gradients for phi
+        # J['phi', 'chord'] = np.diag(dphi_dx[:, 1])
+        # J['phi', 'theta'] = np.diag(dphi_dx[:, 2])
+        # J['phi', 'Vx'] = np.diag(dphi_dx[:, 3])
+        # J['phi', 'Vy'] = np.diag(dphi_dx[:, 4])
+        # J['phi', 'r'] = np.diag(dphi_dx[:, 5])
+        # J['phi', 'Rhub'] = dphi_dx[:, 6]
+        # J['phi', 'Rtip'] = dphi_dx[:, 7]
+        # J['phi', 'pitch'] = dphi_dx[:, 8]
+
+        WW = np.zeros((1,17))
+        # TODO check gradients for phi
+        J['phi', 'chord'] = 0.0
+        J['phi', 'theta'] = 0.0
+        J['phi', 'Vx'] = 0.0
+        J['phi', 'Vy'] = 0.0
+        J['phi', 'r'] = 0.0
+        J['phi', 'Rhub'] = 0.
+        J['phi', 'Rtip'] = 0.
+        J['phi', 'pitch'] = 0.
+
+        return J
+
+class TestPHI_TOTAL(Group):
+    def __init__(self, af, nSector, bemoptions):
+        super(TestPHI_TOTAL, self).__init__()
+        self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
+        self.add('Rtip', IndepVarComp('Rtip', 0.0), promotes=['*'])
+        self.add('precone', IndepVarComp('precone', 0.0), promotes=['*'])
+        self.add('tilt', IndepVarComp('tilt', 0.0), promotes=['*'])
+        self.add('hubHt', IndepVarComp('hubHt', 0.0), promotes=['*'])
+        self.add('Uinf', IndepVarComp('Uinf', 0.0), promotes=['*'])
+        self.add('pitch', IndepVarComp('pitch', 0.0), promotes=['*'])
+        self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
+        self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
+        self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
+        self.add('azimuth', IndepVarComp('azimuth', 0.0), promotes=['*'])
+        self.add('tsr', IndepVarComp('tsr', 0.0), promotes=['*'])
+        self.add('r', IndepVarComp('r', val=np.zeros(n)), promotes=['*'])
+        self.add('chord', IndepVarComp('chord', val=np.zeros(n)), promotes=['*'])
+        self.add('theta', IndepVarComp('theta', val=np.zeros(n)), promotes=['*'])
+        self.add('precurve', IndepVarComp('precurve', val=np.zeros(n)), promotes=['*'])
+        self.add('presweep', IndepVarComp('presweep', val=np.zeros(n)), promotes=['*'])
+        self.add('init', CCInit(nSector), promotes=['*'])
+        self.add('wind', WindComponents(n), promotes=['*'])
+        self.add('mux', PHI_MUX(n), promotes=['*'])
+        for i in range(len(af)):
+            self.add('phiGroup'+str(i), TestPHI(af, nSector, bemoptions, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch'])
+            self.connect('r', 'phiGroup'+str(i)+'.r', src_indices=[i])
+            self.connect('chord', 'phiGroup'+str(i)+'.chord', src_indices=[i])
+            self.connect('theta', 'phiGroup'+str(i)+'.theta', src_indices=[i])
+            # self.connect('precurve', 'phiGroup'+str(i)+'.precurve', src_indices=[i])
+            # self.connect('presweep', 'phiGroup'+str(i)+'.presweep', src_indices=[i])
+            self.connect('Vx', 'phiGroup'+str(i)+'.Vx', src_indices=[i])
+            self.connect('Vy', 'phiGroup'+str(i)+'.Vy', src_indices=[i])
+            self.connect('phiGroup'+str(i)+'.phi_sub', 'phi'+str(i+1))
+
+class TestPHI(Group):
+    def __init__(self, af, nSector, bemoptions, i):
+        super(TestPHI, self).__init__()
+
+
+
+        sub = self.add('sub', Group(), promotes=['*'])
+
+        sub.add('angles', Angles2(af, bemoptions, n, i), promotes=['*']) # 'r', 'chord', 'theta', 'Rhub', 'Rtip', 'Vx', 'Vy', 'phi_sub', 'rho', 'mu', 'Omega', ])
+        # self.add('flow', Flow(af, bemoptions, n), promotes=['*'])
+        # self.add('bem', Airfoils(af, n), promotes=['*'])
+        # self.add('loads', DistributedAeroLoads(af, n), promotes=['chord', 'rho', 'phi', 'cl', 'cd', 'W'])
+        sub.nl_solver = Brent()
+        sub.ln_solver = ScipyGMRES()
+                # epsilon = 1e-6
+                # phi_lower = epsilon
+                # phi_upper = pi/2
+        eps = 1e-6
+        sub.nl_solver.options['lower_bound'] = eps
+        sub.nl_solver.options['upper_bound'] = np.pi/2 - eps
+        sub.nl_solver.options['state_var'] = 'phi_sub'
+
+        # self.add('flow', Flow(af, bemoptions, n), promotes=['*'])
+        # self.add('bem', Airfoils(af, n), promotes=['*'])
+        # self.add('loads', DistributedAeroLoads(af, n), promotes=['*'])
+        # self.connect(phi, )
+
+class PHI_MUX(Component):
+    def __init__(self, n):
+        super(PHI_MUX, self).__init__()
+        for i in range(n):
+            self.add_param('phi'+str(i+1), val=0.0)
+        self.add_output('phi', val=np.zeros(n))
+
+    def solve_nonlinear(self, params, unknowns, resids):
+        for i in range(n):
+            unknowns['phi'][i] = params['phi'+str(i+1)]
+
+    def linearize(self, params, unknowns, resids):
+        J = {}
+        for i in range(17):
+            zeros = np.zeros(17)
+            zeros[i] = 1
+            J['phi', 'phi'+str(i+1)] = zeros
+
+        return J
+
+def test_bracket(n, af, bemoptions):
+
+        p = Problem()
+        p.root = TestPHI_TOTAL(af, nSector, bemoptions)
+        p.setup()  # check=False)
+
+        p['Rhub'] = Rhub
+        p['Rtip'] = Rtip
+        p['r'] = r
+        p['chord'] = chord
+        p['theta'] = np.radians(theta)
+        # p['B'] = B
+        p['rho'] = rho
+        p['mu'] = mu
+        p['tilt'] = np.radians(tilt)
+        p['precone'] = np.radians(precone)
+        p['yaw'] = np.radians(yaw)
+        p['shearExp'] = shearExp
+        p['hubHt'] = hubHt
+        # p['nSector'] = nSector
+        p['Uinf'] = Uinf
+        p['tsr'] = tsr
+        p['pitch'] = np.radians(pitch)
+        p['azimuth'] = np.radians(azimuth)
+
+
+
+        p.run()
+
+        test_grad = open('partial_test_grad.txt', 'w')
+        # power_gradients = p.check_total_derivatives(out_stream=test_grad)
+        power_partial = p.check_partial_derivatives(out_stream=test_grad)
+        # manually compute the right answer
+        # def manual_f(phi, params):
+        #     r = np.sin(phi)/(1-p['a']) - np.cos(phi)/p['lambda_r']/(1+p['ap'])
+        #     # print phi, p['a'], p['lambda_r'], 1+p['ap'], r
+        #     return r
+        #
+        # # run manually
+        # phi_star = brentq(manual_f, eps, np.pi/2-eps, args=(p.root.params,))
+        # angles = p.root.angles
+        # wind = p.root.wind
+        print "phi", p.root.unknowns['phi']
+        # print "phi manual", phi_star
+
 class CCBlade(Group):
 
     def __init__(self, af, nSector, bemoptions):
@@ -1461,6 +1859,7 @@ class LoadsGroup(Group):
 #         self.add('wind', WindComponents(azimuth, n), promotes=['*'])
 
 if __name__ == "__main__":
+
 
     # geometry
     Rhub = 1.5
@@ -1517,23 +1916,54 @@ if __name__ == "__main__":
     pitch = 0.0
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     azimuth = 90.
+    n = 17
+    test_bracket(n, af, bemoptions)
+
+    ## Load gradients
+    loads = Problem()
+    root = loads.root = LoadsGroup(af, azimuth)
+    loads.setup()
+
+    loads['Rhub'] = Rhub
+    loads['Rtip'] = Rtip
+    loads['r'] = r
+    loads['chord'] = chord
+    loads['theta'] = np.radians(theta)
+    # loads['B'] = B
+    loads['rho'] = rho
+    loads['mu'] = mu
+    loads['tilt'] = np.radians(tilt)
+    loads['precone'] = np.radians(precone)
+    loads['yaw'] = np.radians(yaw)
+    loads['shearExp'] = shearExp
+    loads['hubHt'] = hubHt
+    loads['nSector'] = nSector
+    loads['Uinf'] = Uinf
+    loads['tsr'] = Omega * loads['Rtip'] * pi / (30.0 * Uinf)
+    loads['pitch'] = np.radians(pitch)
+    loads['azimuth'] = np.radians(azimuth)
+
+    loads.run()
+
 
     ccblade = Problem()
     ccblade.root = CCBlade(af, nSector, bemoptions)
 
     ### SETUP OPTIMIZATION
-    ccblade.driver = pyOptSparseDriver()
-    ccblade.driver.options['optimizer'] = 'SNOPT' #'SLSQP'
-    # CCBlade.driver.options['tol'] = 1.0e-8
+    # ccblade.driver = pyOptSparseDriver()
+    # ccblade.driver.options['optimizer'] = 'SNOPT' #'SLSQP'
+    # ccblade.driver.options['tol'] = 1.0e-8
 
-    ccblade.driver.add_desvar('tsr', lower=1.5, upper=14.0)
-
-    ccblade.driver.add_objective('obj')
+    # ccblade.driver.add_desvar('tsr', lower=1.5, upper=14.0)
+    #
+    # ccblade.driver.add_objective('obj')
 
     # recorder = SqliteRecorder('recorder')
     # recorder.options['record_params'] = True
     # recorder.options['record_metadata'] = True
     # CCBlade.driver.add_recorder(recorder)
+
+
 
     ccblade.setup()
 
@@ -1557,8 +1987,8 @@ if __name__ == "__main__":
 
     ccblade.run()
 
-    # test_grad = open('partial_test_grad.txt', 'w')
+    test_grad = open('partial_test_grad.txt', 'w')
     # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
-    # power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
+    power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
 
     print 'CP', ccblade.root.eval.unknowns['CP']
