@@ -17,7 +17,7 @@ import numpy as np
 import math
 from openmdao.api import Problem
 
-from ccblade import CCAirfoil, CCBlade
+from ccblade2 import CCAirfoil, CCBlade
 
 
 class TestNREL5MW(unittest.TestCase):

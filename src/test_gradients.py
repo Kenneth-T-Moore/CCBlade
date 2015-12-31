@@ -16,9 +16,10 @@ import unittest
 import numpy as np
 from math import pi
 from os import path
-from openmdao.api import Problem
+from openmdao.api import IndepVarComp, Problem, Group
+from utilities import check_gradient_unit_test, check_for_missing_unit_tests
 
-from ccblade import CCAirfoil, CCBlade, LoadsGroup
+from ccblade2 import CCAirfoil, CCBlade, LoadsGroup, BEM, BrentGroup, AirfoilComp, FlowCondition
 
 class TestGradientsClass(unittest.TestCase):
     @classmethod
@@ -26,11 +27,11 @@ class TestGradientsClass(unittest.TestCase):
        pass
 
 
-class TestGradients(TestGradientsClass):
+class TestGradientsPower_Loads(TestGradientsClass):
 
     @classmethod
     def setUpClass(self):
-        super(TestGradients, self).setUpClass()
+        super(TestGradientsPower_Loads, self).setUpClass()
         # geometry
         Rhub = 1.5
         Rtip = 63.0
@@ -90,7 +91,7 @@ class TestGradients(TestGradientsClass):
         ## Load gradients
         loads = Problem()
         root = loads.root = LoadsGroup(n)
-        loads.setup()
+        loads.setup(check=False)
 
         loads['Rhub'] = Rhub
         loads['Rtip'] = Rtip
@@ -119,7 +120,7 @@ class TestGradients(TestGradientsClass):
         ## Power Gradients
         ccblade = Problem()
         root = ccblade.root = CCBlade(nSector, n)
-        ccblade.setup()
+        ccblade.setup(check=False)
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip
         ccblade['r'] = r
@@ -137,17 +138,19 @@ class TestGradients(TestGradientsClass):
         ccblade['Uinf'] = Uinf
         ccblade['Omega'] = Omega
         ccblade['pitch'] = np.radians(pitch)
+        ccblade['af'] = af
+        ccblade['bemoptions'] = bemoptions
 
         ccblade.run()
 
         print "Generating gradients for Test 1. Please wait..."
         power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
-        power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q', 'Omega'])
+        # power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q'])
         # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
         print "Gradients generated for Test 1."
 
         self.loads_gradients = loads_gradients
-        self.power_gradients = power_gradients
+        # self.power_gradients = power_gradients
         self.n = len(r)
         self.npts = 1  # len(Uinf)
 
@@ -965,333 +968,333 @@ class TestGradients(TestGradientsClass):
 
 
 
-class TestGradientsNotRotating(TestGradientsClass):
-
-    @classmethod
-    def setUpClass(cls):
-        super(TestGradientsNotRotating, cls).setUpClass()
-
-        # geometry
-        Rhub = 1.5
-        Rtip = 63.0
-
-        r = np.array([2.8667, 5.6000, 8.3333, 11.7500, 15.8500, 19.9500, 24.0500,
-                      28.1500, 32.2500, 36.3500, 40.4500, 44.5500, 48.6500, 52.7500,
-                      56.1667, 58.9000, 61.6333])
-        chord = np.array([3.542, 3.854, 4.167, 4.557, 4.652, 4.458, 4.249, 4.007, 3.748,
-                          3.502, 3.256, 3.010, 2.764, 2.518, 2.313, 2.086, 1.419])
-        theta = np.array([13.308, 13.308, 13.308, 13.308, 11.480, 10.162, 9.011, 7.795,
-                          6.544, 5.361, 4.188, 3.125, 2.319, 1.526, 0.863, 0.370, 0.106])
-        B = 3  # number of blades
-
-        # atmosphere
-        rho = 1.225
-        mu = 1.81206e-5
-
-        afinit = CCAirfoil.initFromAerodynFile  # just for shorthand
-        basepath = path.join(path.dirname(path.realpath(__file__)), '5MW_AFFiles') + path.sep
-
-        # load all airfoils
-        airfoil_types = [0]*8
-        airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
-        airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
-        airfoil_types[2] = afinit(basepath + 'DU40_A17.dat')
-        airfoil_types[3] = afinit(basepath + 'DU35_A17.dat')
-        airfoil_types[4] = afinit(basepath + 'DU30_A17.dat')
-        airfoil_types[5] = afinit(basepath + 'DU25_A17.dat')
-        airfoil_types[6] = afinit(basepath + 'DU21_A17.dat')
-        airfoil_types[7] = afinit(basepath + 'NACA64_A17.dat')
-
-        # place at appropriate radial stations
-        af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
-
-        af = [0]*len(r)
-        for i in range(len(r)):
-            af[i] = airfoil_types[af_idx[i]]
-
-
-        tilt = -5.0
-        precone = 2.5
-        yaw = 0.0
-        shearExp = 0.2
-        hubHt = 80.0
-        nSector = 8
-
-        # set conditions
-        Uinf = 10.0
-        pitch = 0.0
-        Omega = 0.0  # convert to RPM
-        azimuth = 90.
-
-        n = len(r)
-        bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
-
-        ## Load gradients
-        loads = Problem()
-        root = loads.root = LoadsGroup(n)
-
-        loads.setup()
-
-        loads['Rhub'] = Rhub
-        loads['Rtip'] = Rtip
-        loads['r'] = r
-        loads['chord'] = chord
-        loads['theta'] = np.radians(theta)
-        loads['rho'] = rho
-        loads['mu'] = mu
-        loads['tilt'] = np.radians(tilt)
-        loads['precone'] = np.radians(precone)
-        loads['yaw'] = np.radians(yaw)
-        loads['shearExp'] = shearExp
-        loads['hubHt'] = hubHt
-        # loads['nSector'] = nSector
-        loads['Uinf'] = Uinf
-        loads['Omega'] = Omega
-        loads['pitch'] = np.radians(pitch)
-        loads['azimuth'] = np.radians(azimuth)
-        loads['af'] = af
-        loads['bemoptions'] = bemoptions
-
-        loads.run()
-        loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
-        print "Generating gradients for Test 2. Please wait."
-        loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp'])
-        print "Gradients generated for Test 2."
-        cls.loads_gradients = loads_gradients
-        cls.n = len(r)
-        cls.npts = 1  # len(Uinf)
-
-    def test_dr1(self):
-
-        dNp_dr = self.loads_gradients['Np', 'r']['J_fwd']
-        dTp_dr = self.loads_gradients['Tp', 'r']['J_fwd']
-        dNp_dr_fd = self.loads_gradients['Np', 'r']['J_fd']
-        dTp_dr_fd = self.loads_gradients['Tp', 'r']['J_fd']
-
-        np.testing.assert_allclose(dNp_dr_fd, dNp_dr, rtol=1e-4, atol=1e-8)
-        np.testing.assert_allclose(dTp_dr_fd, dTp_dr, rtol=1e-4, atol=1e-8)
-
-
-    def test_dchord1(self):
-
-        dNp_dchord = self.loads_gradients['Np', 'chord']['J_fwd']
-        dTp_dchord = self.loads_gradients['Tp', 'chord']['J_fwd']
-        dNp_dchord_fd = self.loads_gradients['Np', 'chord']['J_fd']
-        dTp_dchord_fd = self.loads_gradients['Tp', 'chord']['J_fd']
-
-        np.testing.assert_allclose(dNp_dchord_fd, dNp_dchord, rtol=1e-6, atol=1e-8)
-        np.testing.assert_allclose(dTp_dchord_fd, dTp_dchord, rtol=5e-5, atol=1e-8)
-
-
-    def test_dtheta1(self):
-
-        dNp_dtheta = self.loads_gradients['Np', 'theta']['J_fwd']
-        dTp_dtheta = self.loads_gradients['Tp', 'theta']['J_fwd']
-        dNp_dtheta_fd = self.loads_gradients['Np', 'theta']['J_fd']
-        dTp_dtheta_fd = self.loads_gradients['Tp', 'theta']['J_fd']
-
-        np.testing.assert_allclose(dNp_dtheta_fd, dNp_dtheta, rtol=1e-6, atol=1e-6)
-        np.testing.assert_allclose(dTp_dtheta_fd, dTp_dtheta, rtol=1e-4, atol=1e-6)
-
-
-    def test_dRhub1(self):
-
-        dNp_dRhub = self.loads_gradients['Np', 'Rhub']['J_fwd']
-        dTp_dRhub = self.loads_gradients['Tp', 'Rhub']['J_fwd']
-
-        dNp_dRhub_fd = self.loads_gradients['Np', 'Rhub']['J_fd']
-        dTp_dRhub_fd = self.loads_gradients['Tp', 'Rhub']['J_fd']
-
-        np.testing.assert_allclose(dNp_dRhub_fd, dNp_dRhub, rtol=1e-5, atol=1e-7)
-        np.testing.assert_allclose(dTp_dRhub_fd, dTp_dRhub, rtol=1e-4, atol=1e-7)
-
-
-    def test_dRtip1(self):
-
-        dNp_dRtip = self.loads_gradients['Np', 'Rtip']['J_fwd']
-        dTp_dRtip = self.loads_gradients['Tp', 'Rtip']['J_fwd']
-
-        dNp_dRtip_fd = self.loads_gradients['Np', 'Rtip']['J_fd']
-        dTp_dRtip_fd = self.loads_gradients['Tp', 'Rtip']['J_fd']
-
-        np.testing.assert_allclose(dNp_dRtip_fd, dNp_dRtip, rtol=1e-4, atol=1e-8)
-        np.testing.assert_allclose(dTp_dRtip_fd, dTp_dRtip, rtol=1e-4, atol=1e-8)
-
-
-    def test_dprecone1(self):
-
-        dNp_dprecone = self.loads_gradients['Np', 'precone']['J_fwd']
-        dTp_dprecone = self.loads_gradients['Tp', 'precone']['J_fwd']
-
-        dNp_dprecone_fd = self.loads_gradients['Np', 'precone']['J_fd']
-        dTp_dprecone_fd = self.loads_gradients['Tp', 'precone']['J_fd']
-
-        np.testing.assert_allclose(dNp_dprecone_fd, dNp_dprecone, rtol=1e-6, atol=1e-8)
-        np.testing.assert_allclose(dTp_dprecone_fd, dTp_dprecone, rtol=1e-6, atol=1e-8)
-
-
-    def test_dtilt1(self):
-
-        dNp_dtilt = self.loads_gradients['Np', 'tilt']['J_fwd']
-        dTp_dtilt = self.loads_gradients['Tp', 'tilt']['J_fwd']
-
-        dNp_dtilt_fd = self.loads_gradients['Np', 'tilt']['J_fd']
-        dTp_dtilt_fd = self.loads_gradients['Tp', 'tilt']['J_fd']
-
-        np.testing.assert_allclose(dNp_dtilt_fd, dNp_dtilt, rtol=1e-6, atol=1e-6)
-        np.testing.assert_allclose(dTp_dtilt_fd, dTp_dtilt, rtol=1e-5, atol=1e-6)
-
-
-    def test_dhubht1(self):
-
-        dNp_dhubht = self.loads_gradients['Np', 'hubHt']['J_fwd']
-        dTp_dhubht = self.loads_gradients['Tp', 'hubHt']['J_fwd']
-
-        dNp_dhubht_fd = self.loads_gradients['Np', 'hubHt']['J_fd']
-        dTp_dhubht_fd = self.loads_gradients['Tp', 'hubHt']['J_fd']
-
-        np.testing.assert_allclose(dNp_dhubht_fd, dNp_dhubht, rtol=1e-4, atol=1e-6) #TODO: rtol=1e-5, atol=1e-8
-        np.testing.assert_allclose(dTp_dhubht_fd, dTp_dhubht, rtol=1e-4, atol=1e-6)
-
-
-    def test_dyaw1(self):
-
-        dNp_dyaw = self.loads_gradients['Np', 'yaw']['J_fwd']
-        dTp_dyaw = self.loads_gradients['Tp', 'yaw']['J_fwd']
-
-        dNp_dyaw_fd = self.loads_gradients['Np', 'yaw']['J_fd']
-        dTp_dyaw_fd = self.loads_gradients['Tp', 'yaw']['J_fd']
-
-        np.testing.assert_allclose(dNp_dyaw_fd, dNp_dyaw, rtol=1e-5, atol=1e-8)
-        np.testing.assert_allclose(dTp_dyaw_fd, dTp_dyaw, rtol=1e-5, atol=1e-8)
-
-
-
-    def test_dazimuth1(self):
-
-        dNp_dazimuth = self.loads_gradients['Np', 'azimuth']['J_fwd']
-        dTp_dazimuth = self.loads_gradients['Tp', 'azimuth']['J_fwd']
-
-        dNp_dazimuth_fd = self.loads_gradients['Np', 'azimuth']['J_fd']
-        dTp_dazimuth_fd = self.loads_gradients['Tp', 'azimuth']['J_fd']
-
-        np.testing.assert_allclose(dNp_dazimuth_fd, dNp_dazimuth, rtol=1e-5, atol=1e-6)
-        np.testing.assert_allclose(dTp_dazimuth_fd, dTp_dazimuth, rtol=1e-5, atol=1e-6)
-
-
-    def test_dUinf1(self):
-
-        dNp_dUinf = self.loads_gradients['Np', 'Uinf']['J_fwd']
-        dTp_dUinf = self.loads_gradients['Tp', 'Uinf']['J_fwd']
-
-        dNp_dUinf_fd = self.loads_gradients['Np', 'Uinf']['J_fd']
-        dTp_dUinf_fd = self.loads_gradients['Tp', 'Uinf']['J_fd']
-
-        np.testing.assert_allclose(dNp_dUinf_fd, dNp_dUinf, rtol=1e-5, atol=1e-6)
-        np.testing.assert_allclose(dTp_dUinf_fd, dTp_dUinf, rtol=1e-5, atol=1e-6)
-
-
-    #
-    # Omega is fixed at 0 so no need to run derivatives test
-    #
-
-
-    def test_dpitch1(self):
-
-        dNp_dpitch = self.loads_gradients['Np', 'pitch']['J_fwd']
-        dTp_dpitch = self.loads_gradients['Tp', 'pitch']['J_fwd']
-
-        dNp_dpitch_fd = self.loads_gradients['Np', 'pitch']['J_fd']
-        dTp_dpitch_fd = self.loads_gradients['Tp', 'pitch']['J_fd']
-
-        np.testing.assert_allclose(dNp_dpitch_fd, dNp_dpitch, rtol=5e-5, atol=1e-6)
-        np.testing.assert_allclose(dTp_dpitch_fd, dTp_dpitch, rtol=5e-5, atol=1e-6)
-
-
-
-    def test_dprecurve1(self):
-
-        # precurve = np.linspace(1, 10, self.n)
-        # precurveTip = 10.1
-        # precone = 0.0
-        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-        #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
-        #
-        # Np, Tp, dNp, dTp \
-        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-
-
-        dNp_dprecurve = self.loads_gradients['Np', 'precurve']['J_fwd']
-        dTp_dprecurve = self.loads_gradients['Tp', 'precurve']['J_fwd']
-
-        dNp_dprecurve_fd = self.loads_gradients['Np', 'precurve']['J_fd']
-        dTp_dprecurve_fd = self.loads_gradients['Tp', 'precurve']['J_fd']
-
-        np.testing.assert_allclose(dNp_dprecurve_fd, dNp_dprecurve, rtol=3e-4, atol=1e-8)
-        np.testing.assert_allclose(dTp_dprecurve_fd, dTp_dprecurve, rtol=3e-4, atol=1e-8)
-
-    def test_dpresweep1(self):
-
-        # presweep = np.linspace(1, 10, self.n)
-        # presweepTip = 10.1
-        # precone = 0.0
-        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-        #
-        # Np, Tp, dNp, dTp \
-        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-
-        dNp_dpresweep = self.loads_gradients['Np', 'presweep']['J_fwd']
-        dTp_dpresweep = self.loads_gradients['Tp', 'presweep']['J_fd']
-
-        dNp_dpresweep_fd = self.loads_gradients['Np', 'presweep']['J_fd']
-        dTp_dpresweep_fd = self.loads_gradients['Tp', 'presweep']['J_fd']
-
-        np.testing.assert_allclose(dNp_dpresweep_fd, dNp_dpresweep, rtol=1e-5, atol=1e-8)
-        np.testing.assert_allclose(dTp_dpresweep_fd, dTp_dpresweep, rtol=1e-5, atol=1e-8)
-
-
-    def test_dprecurveTip1(self):
-
-        # precurve = np.linspace(1, 10, self.n)
-        # precurveTip = 10.1
-        # precone = 0.0
-        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-        #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
-        #
-        # Np, Tp, dNp, dTp \
-        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-
-        dNp_dprecurveTip_fd = self.loads_gradients['Np', 'precurveTip']['J_fd']
-        dTp_dprecurveTip_fd = self.loads_gradients['Tp', 'precurveTip']['J_fd']
-
-        np.testing.assert_allclose(dNp_dprecurveTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-        np.testing.assert_allclose(dTp_dprecurveTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-
-
-    def test_dpresweepTip1(self):
-
-        # presweep = np.linspace(1, 10, self.n)
-        # presweepTip = 10.1
-        # precone = 0.0
-        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-        #
-        # Np, Tp, dNp, dTp \
-        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-
-        dNp_dpresweepTip_fd = self.loads_gradients['Np', 'presweepTip']['J_fd']
-        dTp_dpresweepTip_fd = self.loads_gradients['Tp', 'presweepTip']['J_fd']
-
-        np.testing.assert_allclose(dNp_dpresweepTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-        np.testing.assert_allclose(dTp_dpresweepTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-
-
-
+# class TestGradientsNotRotating(TestGradientsClass):
+#
+#     @classmethod
+#     def setUpClass(cls):
+#         super(TestGradientsNotRotating, cls).setUpClass()
+#
+#         # geometry
+#         Rhub = 1.5
+#         Rtip = 63.0
+#
+#         r = np.array([2.8667, 5.6000, 8.3333, 11.7500, 15.8500, 19.9500, 24.0500,
+#                       28.1500, 32.2500, 36.3500, 40.4500, 44.5500, 48.6500, 52.7500,
+#                       56.1667, 58.9000, 61.6333])
+#         chord = np.array([3.542, 3.854, 4.167, 4.557, 4.652, 4.458, 4.249, 4.007, 3.748,
+#                           3.502, 3.256, 3.010, 2.764, 2.518, 2.313, 2.086, 1.419])
+#         theta = np.array([13.308, 13.308, 13.308, 13.308, 11.480, 10.162, 9.011, 7.795,
+#                           6.544, 5.361, 4.188, 3.125, 2.319, 1.526, 0.863, 0.370, 0.106])
+#         B = 3  # number of blades
+#
+#         # atmosphere
+#         rho = 1.225
+#         mu = 1.81206e-5
+#
+#         afinit = CCAirfoil.initFromAerodynFile  # just for shorthand
+#         basepath = path.join(path.dirname(path.realpath(__file__)), '5MW_AFFiles') + path.sep
+#
+#         # load all airfoils
+#         airfoil_types = [0]*8
+#         airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+#         airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+#         airfoil_types[2] = afinit(basepath + 'DU40_A17.dat')
+#         airfoil_types[3] = afinit(basepath + 'DU35_A17.dat')
+#         airfoil_types[4] = afinit(basepath + 'DU30_A17.dat')
+#         airfoil_types[5] = afinit(basepath + 'DU25_A17.dat')
+#         airfoil_types[6] = afinit(basepath + 'DU21_A17.dat')
+#         airfoil_types[7] = afinit(basepath + 'NACA64_A17.dat')
+#
+#         # place at appropriate radial stations
+#         af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
+#
+#         af = [0]*len(r)
+#         for i in range(len(r)):
+#             af[i] = airfoil_types[af_idx[i]]
+#
+#
+#         tilt = -5.0
+#         precone = 2.5
+#         yaw = 0.0
+#         shearExp = 0.2
+#         hubHt = 80.0
+#         nSector = 8
+#
+#         # set conditions
+#         Uinf = 10.0
+#         pitch = 0.0
+#         Omega = 0.0  # convert to RPM
+#         azimuth = 90.
+#
+#         n = len(r)
+#         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
+#
+#         ## Load gradients
+#         loads = Problem()
+#         root = loads.root = LoadsGroup(n)
+#
+#         loads.setup(check=False)
+#
+#         loads['Rhub'] = Rhub
+#         loads['Rtip'] = Rtip
+#         loads['r'] = r
+#         loads['chord'] = chord
+#         loads['theta'] = np.radians(theta)
+#         loads['rho'] = rho
+#         loads['mu'] = mu
+#         loads['tilt'] = np.radians(tilt)
+#         loads['precone'] = np.radians(precone)
+#         loads['yaw'] = np.radians(yaw)
+#         loads['shearExp'] = shearExp
+#         loads['hubHt'] = hubHt
+#         # loads['nSector'] = nSector
+#         loads['Uinf'] = Uinf
+#         loads['Omega'] = Omega
+#         loads['pitch'] = np.radians(pitch)
+#         loads['azimuth'] = np.radians(azimuth)
+#         loads['af'] = af
+#         loads['bemoptions'] = bemoptions
+#
+#         loads.run()
+#         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
+#         print "Generating gradients for Test 2. Please wait."
+#         loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp'])
+#         print "Gradients generated for Test 2."
+#         cls.loads_gradients = loads_gradients
+#         cls.n = len(r)
+#         cls.npts = 1  # len(Uinf)
+#
+#     def test_dr1(self):
+#
+#         dNp_dr = self.loads_gradients['Np', 'r']['J_fwd']
+#         dTp_dr = self.loads_gradients['Tp', 'r']['J_fwd']
+#         dNp_dr_fd = self.loads_gradients['Np', 'r']['J_fd']
+#         dTp_dr_fd = self.loads_gradients['Tp', 'r']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dr_fd, dNp_dr, rtol=1e-4, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dr_fd, dTp_dr, rtol=1e-4, atol=1e-8)
+#
+#
+#     def test_dchord1(self):
+#
+#         dNp_dchord = self.loads_gradients['Np', 'chord']['J_fwd']
+#         dTp_dchord = self.loads_gradients['Tp', 'chord']['J_fwd']
+#         dNp_dchord_fd = self.loads_gradients['Np', 'chord']['J_fd']
+#         dTp_dchord_fd = self.loads_gradients['Tp', 'chord']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dchord_fd, dNp_dchord, rtol=1e-6, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dchord_fd, dTp_dchord, rtol=5e-5, atol=1e-8)
+#
+#
+#     def test_dtheta1(self):
+#
+#         dNp_dtheta = self.loads_gradients['Np', 'theta']['J_fwd']
+#         dTp_dtheta = self.loads_gradients['Tp', 'theta']['J_fwd']
+#         dNp_dtheta_fd = self.loads_gradients['Np', 'theta']['J_fd']
+#         dTp_dtheta_fd = self.loads_gradients['Tp', 'theta']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dtheta_fd, dNp_dtheta, rtol=1e-6, atol=1e-6)
+#         np.testing.assert_allclose(dTp_dtheta_fd, dTp_dtheta, rtol=1e-4, atol=1e-6)
+#
+#
+#     def test_dRhub1(self):
+#
+#         dNp_dRhub = self.loads_gradients['Np', 'Rhub']['J_fwd']
+#         dTp_dRhub = self.loads_gradients['Tp', 'Rhub']['J_fwd']
+#
+#         dNp_dRhub_fd = self.loads_gradients['Np', 'Rhub']['J_fd']
+#         dTp_dRhub_fd = self.loads_gradients['Tp', 'Rhub']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dRhub_fd, dNp_dRhub, rtol=1e-5, atol=1e-7)
+#         np.testing.assert_allclose(dTp_dRhub_fd, dTp_dRhub, rtol=1e-4, atol=1e-7)
+#
+#
+#     def test_dRtip1(self):
+#
+#         dNp_dRtip = self.loads_gradients['Np', 'Rtip']['J_fwd']
+#         dTp_dRtip = self.loads_gradients['Tp', 'Rtip']['J_fwd']
+#
+#         dNp_dRtip_fd = self.loads_gradients['Np', 'Rtip']['J_fd']
+#         dTp_dRtip_fd = self.loads_gradients['Tp', 'Rtip']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dRtip_fd, dNp_dRtip, rtol=1e-4, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dRtip_fd, dTp_dRtip, rtol=1e-4, atol=1e-8)
+#
+#
+#     def test_dprecone1(self):
+#
+#         dNp_dprecone = self.loads_gradients['Np', 'precone']['J_fwd']
+#         dTp_dprecone = self.loads_gradients['Tp', 'precone']['J_fwd']
+#
+#         dNp_dprecone_fd = self.loads_gradients['Np', 'precone']['J_fd']
+#         dTp_dprecone_fd = self.loads_gradients['Tp', 'precone']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dprecone_fd, dNp_dprecone, rtol=1e-6, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dprecone_fd, dTp_dprecone, rtol=1e-6, atol=1e-8)
+#
+#
+#     def test_dtilt1(self):
+#
+#         dNp_dtilt = self.loads_gradients['Np', 'tilt']['J_fwd']
+#         dTp_dtilt = self.loads_gradients['Tp', 'tilt']['J_fwd']
+#
+#         dNp_dtilt_fd = self.loads_gradients['Np', 'tilt']['J_fd']
+#         dTp_dtilt_fd = self.loads_gradients['Tp', 'tilt']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dtilt_fd, dNp_dtilt, rtol=1e-6, atol=1e-6)
+#         np.testing.assert_allclose(dTp_dtilt_fd, dTp_dtilt, rtol=1e-5, atol=1e-6)
+#
+#
+#     def test_dhubht1(self):
+#
+#         dNp_dhubht = self.loads_gradients['Np', 'hubHt']['J_fwd']
+#         dTp_dhubht = self.loads_gradients['Tp', 'hubHt']['J_fwd']
+#
+#         dNp_dhubht_fd = self.loads_gradients['Np', 'hubHt']['J_fd']
+#         dTp_dhubht_fd = self.loads_gradients['Tp', 'hubHt']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dhubht_fd, dNp_dhubht, rtol=1e-4, atol=1e-6) #TODO: rtol=1e-5, atol=1e-8
+#         np.testing.assert_allclose(dTp_dhubht_fd, dTp_dhubht, rtol=1e-4, atol=1e-6)
+#
+#
+#     def test_dyaw1(self):
+#
+#         dNp_dyaw = self.loads_gradients['Np', 'yaw']['J_fwd']
+#         dTp_dyaw = self.loads_gradients['Tp', 'yaw']['J_fwd']
+#
+#         dNp_dyaw_fd = self.loads_gradients['Np', 'yaw']['J_fd']
+#         dTp_dyaw_fd = self.loads_gradients['Tp', 'yaw']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dyaw_fd, dNp_dyaw, rtol=1e-5, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dyaw_fd, dTp_dyaw, rtol=1e-5, atol=1e-8)
+#
+#
+#
+#     def test_dazimuth1(self):
+#
+#         dNp_dazimuth = self.loads_gradients['Np', 'azimuth']['J_fwd']
+#         dTp_dazimuth = self.loads_gradients['Tp', 'azimuth']['J_fwd']
+#
+#         dNp_dazimuth_fd = self.loads_gradients['Np', 'azimuth']['J_fd']
+#         dTp_dazimuth_fd = self.loads_gradients['Tp', 'azimuth']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dazimuth_fd, dNp_dazimuth, rtol=1e-5, atol=1e-6)
+#         np.testing.assert_allclose(dTp_dazimuth_fd, dTp_dazimuth, rtol=1e-5, atol=1e-6)
+#
+#
+#     def test_dUinf1(self):
+#
+#         dNp_dUinf = self.loads_gradients['Np', 'Uinf']['J_fwd']
+#         dTp_dUinf = self.loads_gradients['Tp', 'Uinf']['J_fwd']
+#
+#         dNp_dUinf_fd = self.loads_gradients['Np', 'Uinf']['J_fd']
+#         dTp_dUinf_fd = self.loads_gradients['Tp', 'Uinf']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dUinf_fd, dNp_dUinf, rtol=1e-5, atol=1e-6)
+#         np.testing.assert_allclose(dTp_dUinf_fd, dTp_dUinf, rtol=1e-5, atol=1e-6)
+#
+#
+#     #
+#     # Omega is fixed at 0 so no need to run derivatives test
+#     #
+#
+#
+#     def test_dpitch1(self):
+#
+#         dNp_dpitch = self.loads_gradients['Np', 'pitch']['J_fwd']
+#         dTp_dpitch = self.loads_gradients['Tp', 'pitch']['J_fwd']
+#
+#         dNp_dpitch_fd = self.loads_gradients['Np', 'pitch']['J_fd']
+#         dTp_dpitch_fd = self.loads_gradients['Tp', 'pitch']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dpitch_fd, dNp_dpitch, rtol=5e-5, atol=1e-6)
+#         np.testing.assert_allclose(dTp_dpitch_fd, dTp_dpitch, rtol=5e-5, atol=1e-6)
+#
+#
+#
+#     def test_dprecurve1(self):
+#
+#         # precurve = np.linspace(1, 10, self.n)
+#         # precurveTip = 10.1
+#         # precone = 0.0
+#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+#         #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
+#         #
+#         # Np, Tp, dNp, dTp \
+#         #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+#
+#
+#         dNp_dprecurve = self.loads_gradients['Np', 'precurve']['J_fwd']
+#         dTp_dprecurve = self.loads_gradients['Tp', 'precurve']['J_fwd']
+#
+#         dNp_dprecurve_fd = self.loads_gradients['Np', 'precurve']['J_fd']
+#         dTp_dprecurve_fd = self.loads_gradients['Tp', 'precurve']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dprecurve_fd, dNp_dprecurve, rtol=3e-4, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dprecurve_fd, dTp_dprecurve, rtol=3e-4, atol=1e-8)
+#
+#     def test_dpresweep1(self):
+#
+#         # presweep = np.linspace(1, 10, self.n)
+#         # presweepTip = 10.1
+#         # precone = 0.0
+#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+#         #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+#         #
+#         # Np, Tp, dNp, dTp \
+#         #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+#
+#         dNp_dpresweep = self.loads_gradients['Np', 'presweep']['J_fwd']
+#         dTp_dpresweep = self.loads_gradients['Tp', 'presweep']['J_fd']
+#
+#         dNp_dpresweep_fd = self.loads_gradients['Np', 'presweep']['J_fd']
+#         dTp_dpresweep_fd = self.loads_gradients['Tp', 'presweep']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dpresweep_fd, dNp_dpresweep, rtol=1e-5, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dpresweep_fd, dTp_dpresweep, rtol=1e-5, atol=1e-8)
+#
+#
+#     def test_dprecurveTip1(self):
+#
+#         # precurve = np.linspace(1, 10, self.n)
+#         # precurveTip = 10.1
+#         # precone = 0.0
+#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+#         #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
+#         #
+#         # Np, Tp, dNp, dTp \
+#         #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+#
+#         dNp_dprecurveTip_fd = self.loads_gradients['Np', 'precurveTip']['J_fd']
+#         dTp_dprecurveTip_fd = self.loads_gradients['Tp', 'precurveTip']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dprecurveTip_fd, 0.0, rtol=1e-4, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dprecurveTip_fd, 0.0, rtol=1e-4, atol=1e-8)
+#
+#
+#     def test_dpresweepTip1(self):
+#
+#         # presweep = np.linspace(1, 10, self.n)
+#         # presweepTip = 10.1
+#         # precone = 0.0
+#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+#         #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+#         #
+#         # Np, Tp, dNp, dTp \
+#         #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+#
+#         dNp_dpresweepTip_fd = self.loads_gradients['Np', 'presweepTip']['J_fd']
+#         dTp_dpresweepTip_fd = self.loads_gradients['Tp', 'presweepTip']['J_fd']
+#
+#         np.testing.assert_allclose(dNp_dpresweepTip_fd, 0.0, rtol=1e-4, atol=1e-8)
+#         np.testing.assert_allclose(dTp_dpresweepTip_fd, 0.0, rtol=1e-4, atol=1e-8)
+#
+
+@unittest.skip("Test takes a long time")
 class TestGradientsFreestreamArray(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1356,7 +1359,7 @@ class TestGradientsFreestreamArray(unittest.TestCase):
         ## Power Gradients
         ccblade = Problem()
         root = ccblade.root = CCBlade(nSector, n)
-        ccblade.setup()
+        ccblade.setup(check=False)
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip
         ccblade['r'] = r
@@ -1491,6 +1494,176 @@ class TestGradientsFreestreamArray(unittest.TestCase):
             np.testing.assert_allclose(dCQ_dpitch_fd, dCQ_dpitch, rtol=5e-5, atol=1e-8)
             np.testing.assert_allclose(dCP_dpitch_fd, dCP_dpitch, rtol=5e-5, atol=1e-8)
 
+
+# class TestBrentGroup(unittest.TestCase):
+#
+#     def test1(self):
+#         Rhub = 1.5
+#         Rtip = 63.0
+#         rho = 1.225
+#         mu = 1.81206e-5
+#         tsr = 7.55
+#         Uinf = 10.0
+#         Omega = Uinf*tsr/Rtip * 30.0/pi
+#         B = 3
+#         pitch = 0.0
+#         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
+#         r = 2.8667
+#         chord = 3.542
+#         theta = 13.308
+#         Vx = 9.96219424
+#         Vy = 2.56068618
+#
+#         afinit = CCAirfoil.initFromAerodynFile  # just for shorthand
+#         basepath = path.join(path.dirname(path.realpath(__file__)), '5MW_AFFiles') + path.sep
+#
+#         # load all airfoils
+#         airfoil_types = [0]*8
+#         airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+#         airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+#         airfoil_types[2] = afinit(basepath + 'DU40_A17.dat')
+#         airfoil_types[3] = afinit(basepath + 'DU35_A17.dat')
+#         airfoil_types[4] = afinit(basepath + 'DU30_A17.dat')
+#         airfoil_types[5] = afinit(basepath + 'DU25_A17.dat')
+#         airfoil_types[6] = afinit(basepath + 'DU21_A17.dat')
+#         airfoil_types[7] = afinit(basepath + 'NACA64_A17.dat')
+#
+#         # place at appropriate radial stations
+#         af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
+#         n = len(af_idx)
+#         af = [0]*n
+#         for i in range(n):
+#             af[i] = airfoil_types[af_idx[i]]
+#
+#         prob = Problem()
+#         prob.root = Group()
+#         prob.root.add('comp', BrentGroup(n, 0), promotes=['*'])
+#         prob.root.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
+#         prob.root.add('Rtip', IndepVarComp('Rtip', 0.0), promotes=['*'])
+#         prob.root.add('rho', IndepVarComp('rho', 0.0), promotes=['*'])
+#         prob.root.add('mu', IndepVarComp('mu', 0.0), promotes=['*'])
+#         prob.root.add('Omega', IndepVarComp('Omega', 0.0), promotes=['*'])
+#         prob.root.add('B', IndepVarComp('B', 0, pass_by_obj=True), promotes=['*'])
+#         prob.root.add('pitch', IndepVarComp('pitch', 0.0), promotes=['*'])
+#         prob.root.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
+#         prob.root.add('r', IndepVarComp('r', 0.0), promotes=['*'])
+#         prob.root.add('chord', IndepVarComp('chord', 0.0), promotes=['*'])
+#         prob.root.add('theta', IndepVarComp('theta', 0.0), promotes=['*'])
+#         prob.root.add('Vx', IndepVarComp('Vx', 0.0), promotes=['*'])
+#         prob.root.add('Vy', IndepVarComp('Vy', 0.0), promotes=['*'])
+#         prob.root.add('af', IndepVarComp('af', np.zeros(len(af)), pass_by_obj=True), promotes=['*'])
+#
+#         prob.setup(check=False)
+#
+#         prob['Rhub'] = Rhub
+#         prob['Rtip'] = Rtip
+#         prob['rho'] = rho
+#         prob['mu'] = mu
+#         prob['Omega'] = Omega
+#         prob['B'] = B
+#         prob['pitch'] = pitch
+#         prob['bemoptions'] = bemoptions
+#         prob['r'] = r
+#         prob['chord'] = chord
+#         prob['theta'] = theta
+#         prob['Vx'] = Vx
+#         prob['Vy'] = Vy
+#         prob['af'] = af
+#
+#         check_gradient_unit_test(self, prob)
+
+class TestAirfoilComp(unittest.TestCase):
+
+    def test1(self):
+
+        alpha_sub = 1.08669181
+        Re_sub = 2256848.32455109
+
+        afinit = CCAirfoil.initFromAerodynFile  # just for shorthand
+        basepath = path.join(path.dirname(path.realpath(__file__)), '5MW_AFFiles') + path.sep
+
+        # load all airfoils
+        airfoil_types = [0]*8
+        airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+        airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+        airfoil_types[2] = afinit(basepath + 'DU40_A17.dat')
+        airfoil_types[3] = afinit(basepath + 'DU35_A17.dat')
+        airfoil_types[4] = afinit(basepath + 'DU30_A17.dat')
+        airfoil_types[5] = afinit(basepath + 'DU25_A17.dat')
+        airfoil_types[6] = afinit(basepath + 'DU21_A17.dat')
+        airfoil_types[7] = afinit(basepath + 'NACA64_A17.dat')
+
+        # place at appropriate radial stations
+        af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
+        n = len(af_idx)
+        af = [0]*n
+        for i in range(n):
+            af[i] = airfoil_types[af_idx[i]]
+
+        prob = Problem()
+        prob.root = Group()
+        prob.root.add('comp', AirfoilComp(n, 0), promotes=['*'])
+        prob.root.add('alpha_sub', IndepVarComp('alpha_sub', 0.0), promotes=['*'])
+        prob.root.add('Re_sub', IndepVarComp('Re_sub', 0.0), promotes=['*'])
+        prob.root.add('af', IndepVarComp('af', np.zeros(len(af)), pass_by_obj=True), promotes=['*'])
+        prob.setup(check=False)
+
+        prob['alpha_sub'] = alpha_sub
+        prob['Re_sub'] = Re_sub
+        prob['af'] = af
+
+        check_gradient_unit_test(self, prob)
+
+# class TestFlowCondition(unittest.TestCase):
+#
+#     def test1(self):
+#
+#         pitch = 0.0
+#         Vx = 9.96219424
+#         Vy = 2.56068618
+#         chord = 3.542
+#         theta = 0.23226842
+#         rho = 1.225
+#         mu = 1.81206e-05
+#         a_sub = 0.08282631
+#         ap_sub = -0.08282631
+#         phi_sub = 1.31896023
+#         da_dx = np.array([-0.01430950725054113, 0.02144723621485688, 0.0, 0.0, 0.0, -0.041390638830529222, 0.028458955774978541, -2.0281001151246333e-16, 0.0])
+#         dap_dx = np.array([0.014309507250541129, -0.021447236214856873, 0.0, 0.0, 0.0, 0.041390638830529222, -0.028458955774978541, 2.0281001151246333e-16, 0.0])
+#
+#         prob = Problem()
+#         prob.root = Group()
+#         prob.root.add('comp', FlowCondition(), promotes=['*'])
+#         prob.root.add('pitch', IndepVarComp('pitch', 0.0), promotes=['*'])
+#         prob.root.add('Vx', IndepVarComp('Vx', 0.0), promotes=['*'])
+#         prob.root.add('Vy', IndepVarComp('Vy', 0.0), promotes=['*'])
+#         prob.root.add('chord', IndepVarComp('chord', 0.0), promotes=['*'])
+#         prob.root.add('theta', IndepVarComp('theta', 0.0), promotes=['*'])
+#         prob.root.add('rho', IndepVarComp('rho', 0.0), promotes=['*'])
+#         prob.root.add('mu', IndepVarComp('mu', 0.0), promotes=['*'])
+#         prob.root.add('a_sub', IndepVarComp('a_sub', 0.0), promotes=['*'])
+#         prob.root.add('ap_sub', IndepVarComp('ap_sub', 0.0), promotes=['*'])
+#         prob.root.add('phi_sub', IndepVarComp('phi_sub', 0.0), promotes=['*'])
+#         prob.root.add('da_dx', IndepVarComp('da_dx',  np.zeros(len(da_dx))), promotes=['*'])
+#         prob.root.add('dap_dx', IndepVarComp('dap_dx', np.zeros(len(dap_dx))), promotes=['*'])
+#
+#         prob.setup(check=False)
+#
+#         prob['pitch'] = pitch
+#         prob['Vx'] = Vx
+#         prob['Vy'] = Vy
+#         prob['chord'] = chord
+#         prob['theta'] = theta
+#         prob['rho'] = rho
+#         prob['mu'] = mu
+#         prob['a_sub'] = a_sub
+#         prob['ap_sub'] = ap_sub
+#         prob['mu'] = mu
+#         prob['phi_sub'] = phi_sub
+#         prob['da_dx'] = da_dx
+#         prob['dap_dx'] = dap_dx
+#
+#         check_gradient_unit_test(self, prob)
 
 if __name__ == '__main__':
     unittest.main()

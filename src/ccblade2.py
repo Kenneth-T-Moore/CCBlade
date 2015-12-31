@@ -1,7 +1,7 @@
 __author__ = 'ryanbarr'
 
 import warnings
-from math import cos, sin, pi
+from math import cos, sin, pi, sqrt, acos, exp
 import numpy as np
 import _bem
 from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder, ScipyGMRES
@@ -12,17 +12,14 @@ from airfoilprep import Airfoil
 from brent import Brent
 
 class CCInit(Component):
-
     """
     CCInit
 
-    Initializes all the inputs and performs a few simple calculations as preparation for analysis
+    Calculates rotorR
 
     """
-
     def __init__(self):
         super(CCInit, self).__init__()
-
         self.add_param('Rtip', val=0.0)
         self.add_param('precone', val=0.0)
         self.add_param('precurveTip', val=0.0)
@@ -30,38 +27,27 @@ class CCInit(Component):
         self.add_output('rotorR', shape=1)
 
         self.fd_options['form'] = 'central'
+        self.fd_options['step_type'] = 'relative'
 
     def solve_nonlinear(self, params, unknowns, resids):
-
-        precone = params['precone']
-        Rtip = params['Rtip']
-        precurveTip = params['precurveTip']
-
-        # rotor radius
-        unknowns['rotorR'] = Rtip*cos(precone) + precurveTip*sin(precone)
+        unknowns['rotorR'] = params['Rtip']*cos(params['precone']) + params['precurveTip']*sin(params['precone'])
 
     def linearize(self, params, unknowns, resids):
-
         J = {}
-
-        precone = params['precone']
-        precurveTip = params['precurveTip']
-        Rtip = params['Rtip']
-
-        J['rotorR', 'precone'] = -Rtip*sin(precone) + precurveTip*cos(precone)
-        J['rotorR', 'precurveTip'] = sin(precone)
-        J['rotorR', 'Rtip'] = cos(precone)
-
+        J['rotorR', 'precone'] = -params['Rtip']*sin(params['precone']) + params['precurveTip']*cos(params['precone'])
+        J['rotorR', 'precurveTip'] = sin(params['precone'])
+        J['rotorR', 'Rtip'] = cos(params['precone'])
         return J
 
 class WindComponents(Component):
     """
     WindComponents
 
+    Inputs: n - Number of sections analyzed across blade
+
     Outputs: Vx, Vy
 
     """
-
     def __init__(self, n):
         super(WindComponents, self).__init__()
         self.add_param('r', val=np.zeros(n))
@@ -80,29 +66,13 @@ class WindComponents(Component):
         self.add_output('Vy', shape=n)
 
         self.fd_options['form'] = 'central'
+        self.fd_options['step_type'] = 'relative'
 
     def solve_nonlinear(self, params, unknowns, resids):
-
-        r = params['r']
-        precurve = params['precurve']
-        presweep = params['presweep']
-        precone = params['precone']
-        yaw = params['yaw']
-        tilt = params['tilt']
-        Uinf = params['Uinf']
-        Omega = params['Omega']
-        hubHt = params['hubHt']
-        shearExp = params['shearExp']
-        azimuth = params['azimuth']
-
-        Vx, Vy = _bem.windcomponents(r, precurve, presweep, precone, yaw, tilt, azimuth, Uinf, Omega, hubHt, shearExp)
-
-        unknowns['Vx'] = Vx
-        unknowns['Vy'] = Vy
+        unknowns['Vx'], unknowns['Vy'] = _bem.windcomponents(params['r'], params['precurve'], params['presweep'], params['precone'], params['yaw'], params['tilt'], params['azimuth'], params['Uinf'], params['Omega'], params['hubHt'], params['shearExp'])
 
     def linearize(self, params, unknowns, resids):
         J = {}
-
         r = params['r']
         precurve = params['precurve']
         presweep = params['presweep']
@@ -161,6 +131,12 @@ class WindComponents(Component):
         return J
 
 class FlowCondition(Component):
+    """
+    FlowCondition
+
+    Outputs: alpha, Re, W
+
+    """
     def __init__(self):
         super(FlowCondition, self).__init__()
         self.add_param('pitch', shape=1)
@@ -173,40 +149,34 @@ class FlowCondition(Component):
         self.add_param('a_sub', shape=1)
         self.add_param('phi_sub', shape=1)
         self.add_param('ap_sub', shape=1)
-
-        self.add_param('da_dx', val=np.zeros(9), pass_by_obj=True)
-        self.add_param('dap_dx', val=np.zeros(9), pass_by_obj=True)
+        self.add_param('da_dx', val=np.zeros(9))
+        self.add_param('dap_dx', val=np.zeros(9))
 
         self.add_output('alpha_sub', shape=1)
         self.add_output('Re_sub', shape=1)
         self.add_output('W_sub', shape=1)
+        self.add_output('dalpha_dx', shape=9)
+        self.add_output('dRe_dx', shape=9)
 
+        self.fd_options['form'] = 'central'
+        self.fd_options['step_type'] = 'relative'
 
     def solve_nonlinear(self, params, unknowns, resids):
-        Vx = params['Vx']
-        Vy = params['Vy']
-        chord = params['chord']
-        theta = params['theta']
-        pitch = params['pitch']
-        rho = params['rho']
-        mu = params['mu']
-        phi = params['phi_sub']
-        a = params['a_sub']
-        ap = params['ap_sub']
 
-        alpha, W, Re = _bem.relativewind(phi, a, ap, Vx, Vy, pitch, chord, theta, rho, mu)
+        alpha, W, Re = _bem.relativewind(params['phi_sub'], params['a_sub'], params['ap_sub'], params['Vx'], params['Vy'], params['pitch'], params['chord'], params['theta'], params['rho'], params['mu'])
 
-        dalpha_dx = np.array([1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0])
-        dRe_dx = np.array([0.0, Re/chord, 0.0, Re*Vx/W**2, Re*Vy/W**2, 0.0, 0.0, 0.0, 0.0])
-        dW_dx = np.zeros(len(dRe_dx))
-
-        self.dalpha_dx = dalpha_dx
-        self.dW_dx = dW_dx
-        self.dRe_dx = dRe_dx
-
+        unknowns['dalpha_dx'] = np.array([1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0])
+        unknowns['dRe_dx'] = np.array([0.0, Re/params['chord'], 0.0, Re*params['Vx']/W**2, Re*params['Vy']/W**2, 0.0, 0.0, 0.0, 0.0])
         unknowns['alpha_sub'] = alpha
         unknowns['W_sub'] = W
         unknowns['Re_sub'] = Re
+
+    def list_deriv_vars(self):
+
+        inputs = ('Vx', 'Vy', 'theta', 'pitch', 'rho', 'mu', 'phi_sub', 'a_sub', 'ap_sub')
+        outputs = ('alpha_sub', 'W_sub', 'Re_sub')
+
+        return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
 
@@ -220,40 +190,61 @@ class FlowCondition(Component):
             params['pitch'], dx_dx[8, :], params['chord'], dx_dx[1, :], params['theta'], dx_dx[2, :],
             params['rho'], params['mu'])
 
-        J['alpha_sub', 'phi_sub'] = dalpha_dx[0]
-        J['alpha_sub', 'chord'] = dalpha_dx[1]
-        J['alpha_sub', 'theta'] = dalpha_dx[2]
-        J['alpha_sub', 'Vx'] = dalpha_dx[3]
-        J['alpha_sub', 'Vy'] = dalpha_dx[4]
-        J['alpha_sub', 'r'] = dalpha_dx[5]
-        J['alpha_sub', 'Rhub'] = dalpha_dx[6]
-        J['alpha_sub', 'Rtip'] = dalpha_dx[7]
-        J['alpha_sub', 'pitch'] = dalpha_dx[8]
+        Vx = params['Vx']
+        Vy = params['Vy']
+        if abs(params['a_sub']) > 10:
+            dW_da = 0.0
+            dW_dap = Vy / cos(params['phi_sub'])
+            dW_dVx = 0.0
+            dW_dVy = (1+params['ap_sub'])/cos(params['phi_sub'])
+        elif abs(params['ap_sub']) > 10:
+            dW_da = -params['Vx'] / sin(params['phi_sub'])
+            dW_dap = 0.0
+            dW_dVx = (1-params['a_sub'])/sin(params['phi_sub'])
+            dW_dVy = 0.0
+        else:
+            dW_da = Vx**2*(params['a_sub'] - 1) / (sqrt((Vx*(1 - params['a_sub']))**2 + (Vy*(1+params['ap_sub']))**2))
+            dW_dap = Vy**2*(params['ap_sub'] + 1) / (sqrt((Vx*(1 - params['a_sub']))**2 + (Vy*(1+params['ap_sub']))**2))
+            dW_dVx = Vx*((1-params['a_sub'])**2) / (sqrt((Vx*(1 - params['a_sub']))**2 + (Vy*(1+params['ap_sub']))**2))
+            dW_dVy = Vy*((1 + params['ap_sub'])**2) / (sqrt((Vx*(1 - params['a_sub']))**2 + (Vy*(1+params['ap_sub']))**2))
 
-        J['Re_sub', 'phi_sub'] = dRe_dx[0]
-        J['Re_sub', 'chord'] = dRe_dx[1]
-        J['Re_sub', 'theta'] = dRe_dx[2]
-        J['Re_sub', 'Vx'] = dRe_dx[3]
-        J['Re_sub', 'Vy'] = dRe_dx[4]
-        J['Re_sub', 'r'] = dRe_dx[5]
-        J['Re_sub', 'Rhub'] = dRe_dx[6]
-        J['Re_sub', 'Rtip'] = dRe_dx[7]
-        J['Re_sub', 'pitch'] = dRe_dx[8]
+        J['alpha_sub', 'phi_sub'] = 1.0
+        J['alpha_sub', 'theta'] = -1.0
+        J['alpha_sub', 'pitch'] = -1.0
 
-        J['W_sub', 'phi_sub'] = dW_dx[0]
-        J['W_sub', 'chord'] = dW_dx[1]
-        J['W_sub', 'theta'] = dW_dx[2]
-        J['W_sub', 'Vx'] = dW_dx[3]
-        J['W_sub', 'Vy'] = dW_dx[4]
-        J['W_sub', 'r'] = dW_dx[5]
-        J['W_sub', 'Rhub'] = dW_dx[6]
-        J['W_sub', 'Rtip'] = dW_dx[7]
-        J['W_sub', 'pitch'] = dW_dx[8]
+        J['Re_sub', 'chord'] = Re/params['chord']
+        J['Re_sub', 'Vx'] = params['rho'] * dW_dVx * params['chord'] / params['mu']
+        J['Re_sub', 'Vy'] = params['rho'] * dW_dVy * params['chord'] / params['mu']
+        J['Re_sub', 'a_sub'] = params['rho'] * dW_da * params['chord'] / params['mu']
+        J['Re_sub', 'ap_sub'] = params['rho'] * dW_dap * params['chord'] / params['mu']
+
+        J['W_sub', 'Vx'] = dW_dVx
+        J['W_sub', 'Vy'] = dW_dVy
+        J['W_sub', 'a_sub'] = dW_da
+        J['W_sub', 'ap_sub'] = dW_dap
+
+        # J['W_sub', 'phi_sub'] = dW_dx[0]
+        # J['W_sub', 'chord'] = dW_dx[1]
+        # J['W_sub', 'theta'] = dW_dx[2]
+        # J['W_sub', 'Vx'] = dW_dx[3]
+        # J['W_sub', 'Vy'] = dW_dx[4]
+        # J['W_sub', 'r'] = dW_dx[5]
+        # J['W_sub', 'Rhub'] = dW_dx[6]
+        # J['W_sub', 'Rtip'] = dW_dx[7]
+        # J['W_sub', 'pitch'] = dW_dx[8]
+        # J['W_sub', 'a_sub'] = dW_da
+        # J['W_sub', 'ap_sub'] = dW_dap
 
         return J
 
 class AirfoilComp(Component):
-    """ Lift and drag coefficients
+    """
+    AirfoilComp
+
+    Inputs: n - Number of sections analyzed across blade, i - Section number
+
+    Outputs: cl, cd
+
     """
     def __init__(self, n, i):
         super(AirfoilComp, self).__init__()
@@ -263,39 +254,42 @@ class AirfoilComp(Component):
 
         self.add_output('cl_sub', shape=1)
         self.add_output('cd_sub', shape=1)
+        self.add_output('dcl_dalpha', shape=1)
+        self.add_output('dcl_dRe', shape=1)
+        self.add_output('dcd_dalpha', shape=1)
+        self.add_output('dcd_dRe', shape=1)
 
         self.fd_options['form'] = 'central'
+        self.fd_options['step_type'] = 'relative'
+        self.fd_options['force_fd'] = True
         self.i = i
 
     def solve_nonlinear(self, params, unknowns, resids):
+        unknowns['cl_sub'], unknowns['cd_sub'] = params['af'][self.i].evaluate(params['alpha_sub'], params['Re_sub'])
+        unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = params['af'][self.i].derivatives(params['alpha_sub'], params['Re_sub'])
 
-        alpha = params['alpha_sub']
-        Re = params['Re_sub']
-        af = params['af']
-
-        cl, cd = af[self.i].evaluate(alpha, Re)
-
-        unknowns['cl_sub'] = cl
-        unknowns['cd_sub'] = cd
+    def list_deriv_vars(self):
+        inputs = ('alpha_sub', 'Re_sub')
+        outputs = ('cl_sub', 'cd_sub')
+        return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
-
         J = {}
-
-        af = params['af']
-        alpha = params['alpha_sub']
-        Re = params['Re_sub']
-
-        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = af[self.i].derivatives(alpha, Re)
-
-        J['cl_sub', 'alpha_sub'] = dcl_dalpha
-        J['cl_sub', 'Re_sub'] = dcl_dRe
-        J['cd_sub', 'alpha_sub'] = dcd_dalpha
-        J['cd_sub', 'Re_sub'] = dcl_dRe
-
+        J['cl_sub', 'alpha_sub'] = unknowns['dcl_dalpha']
+        J['cl_sub', 'Re_sub'] = unknowns['dcl_dRe']
+        J['cd_sub', 'alpha_sub'] = unknowns['dcd_dalpha']
+        J['cd_sub', 'Re_sub'] = unknowns['dcd_dRe']
         return J
 
 class BEM(Component):
+    """
+    BEM
+
+    Inputs: n - Number of sections analyzed across blade, i - Section number
+
+    Outputs: phi, a, ap
+
+    """
     def __init__(self, n, i):
         super(BEM, self).__init__()
 
@@ -311,79 +305,64 @@ class BEM(Component):
         self.add_param('mu', shape=1)
         self.add_param('Rhub', shape=1)
         self.add_param('alpha_sub', shape=1)
-        self.add_param('Re_sub', shape=1)
-        self.add_param('W_sub', shape=1)
         self.add_param('cl_sub', val=1.0)
         self.add_param('cd_sub', shape=1)
         self.add_param('B', val=3, pass_by_obj=True)
-        self.add_param('af', val=np.zeros(n), pass_by_obj=True)
         self.add_param('bemoptions', val={}, pass_by_obj=True)
+        self.add_param('dcl_dalpha', shape=1)
+        self.add_param('dcd_dalpha', shape=1)
+        self.add_param('dalpha_dx', shape=9)
+        self.add_param('dcl_dRe', shape=1)
+        self.add_param('dcd_dRe', shape=1)
+        self.add_param('dRe_dx', shape=9)
+
         self.add_output('a_sub', shape=1)
         self.add_output('ap_sub', shape=1)
-
-        self.add_output('da_dx', val=np.zeros(9), pass_by_obj=True)
-        self.add_output('dap_dx', val=np.zeros(9), pass_by_obj=True)
-
+        self.add_output('da_dx', val=np.zeros(9))
+        self.add_output('dap_dx', val=np.zeros(9))
         self.add_state('phi_sub', shape=1)
 
         self.fd_options['form'] = 'central'
+        self.fd_options['step_type'] = 'relative'
         self.i = i
+        self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
         pass
 
     def apply_nonlinear(self, params, unknowns, resids):
 
-        Vx = params['Vx']
-        Vy = params['Vy']
         r = params['r']
-        chord = params['chord']
         Rhub = params['Rhub']
         Rtip = params['Rtip']
-        B = params['B']
-        bemoptions = params['bemoptions']
-        cl = params['cl_sub']
-        cd = params['cd_sub']
-
-        dx_dx = np.eye(9)
-
-        Re = params['Re_sub']
-        alpha = params['alpha_sub']
-        W = params['W_sub']
-        af = params['af']
         Vx = params['Vx']
         Vy = params['Vy']
         bemoptions = params['bemoptions']
         chord = params['chord']
 
-
-        dalpha_dx = np.array([1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0])
-        dRe_dx = np.array([0.0, Re/chord, 0.0, Re*Vx/W**2, Re*Vy/W**2, 0.0, 0.0, 0.0, 0.0])
-
-        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = af[self.i].derivatives(alpha, Re)
-
+        dx_dx = np.eye(9)
         # chain rule
-        dcl_dx = dcl_dalpha*dalpha_dx + dcl_dRe*dRe_dx
-        dcd_dx = dcd_dalpha*dalpha_dx + dcd_dRe*dRe_dx
+        dcl_dx = params['dcl_dalpha']*params['dalpha_dx'] + params['dcl_dRe']*params['dRe_dx']
+        dcd_dx = params['dcd_dalpha']*params['dalpha_dx'] + params['dcd_dRe']*params['dRe_dx']
 
-        fzero, a, ap, dR_dx, da_dx, dap_dx = _bem.inductionfactors_dv(r, chord, Rhub, Rtip,
-            unknowns['phi_sub'], params['cl_sub'], params['cd_sub'], params['B'], Vx, Vy, dx_dx[5, :], dx_dx[1, :], dx_dx[6, :], dx_dx[7, :],
-            dx_dx[0, :], dcl_dx, dcd_dx, dx_dx[3, :], dx_dx[4, :], **bemoptions)
-
-        if not (Omega != 0):
+        if not (params['Omega'] != 0):
             dR_dx = np.zeros(9)
             dR_dx[0] = 1.0  # just to prevent divide by zero
+            da_dx = np.zeros(9)
+            dap_dx = np.zeros(9)
+            unknowns['phi_sub'] = pi/2.0
+            resids['phi_sub'] = 0.0
 
-
-        unknowns['da_dx'] = da_dx
-        unknowns['dap_dx'] = dap_dx
-
-
-        fzero, a, ap = _bem.inductionfactors(r, chord, Rhub, Rtip, unknowns['phi_sub'],
-                                                 cl, cd, B, Vx, Vy, **bemoptions)
-        resids['phi_sub'] = fzero
-        unknowns['a_sub'] = a
-        unknowns['ap_sub'] = ap
+        else:
+            # ------ BEM solution method see (Ning, doi:10.1002/we.1636) ------
+            fzero, a, ap, dR_dx, da_dx, dap_dx = _bem.inductionfactors_dv(r, chord, Rhub, Rtip,
+             unknowns['phi_sub'], params['cl_sub'], params['cd_sub'], params['B'], Vx, Vy, dx_dx[5, :], dx_dx[1, :], dx_dx[6, :], dx_dx[7, :],
+             dx_dx[0, :], dcl_dx, dcd_dx, dx_dx[3, :], dx_dx[4, :], **bemoptions)
+            resids['phi_sub'] = fzero
+            unknowns['a_sub'] = a
+            unknowns['ap_sub'] = ap
+            unknowns['da_dx'] = da_dx
+            unknowns['dap_dx'] = dap_dx
 
         self.dR_dx = dR_dx
         self.da_dx = da_dx
@@ -391,48 +370,79 @@ class BEM(Component):
 
     def linearize(self, params, unknowns, resids):
         J = {}
-
-        # residual, a, ap (Tapenade)
         # x = [phi, chord, theta, Vx, Vy, r, Rhub, Rtip, pitch]  (derivative order)
-
         dR_dx = self.dR_dx
         da_dx = self.da_dx
         dap_dx = self.dap_dx
 
-
         J['phi_sub', 'phi_sub'] = dR_dx[0]
         J['phi_sub', 'chord'] = dR_dx[1]
-        J['phi_sub', 'theta'] = dR_dx[2]
+        # J['phi_sub', 'theta'] = dR_dx[2]
         J['phi_sub', 'Vx'] = dR_dx[3]
         J['phi_sub', 'Vy'] = dR_dx[4]
         J['phi_sub', 'r'] = dR_dx[5]
         J['phi_sub', 'Rhub'] = dR_dx[6]
         J['phi_sub', 'Rtip'] = dR_dx[7]
-        J['phi_sub', 'pitch'] = dR_dx[8]
+        # J['phi_sub', 'pitch'] = dR_dx[8]
 
-        J['a_sub', 'phi_sub'] = da_dx[0]
-        J['a_sub', 'chord'] = da_dx[1]
-        J['a_sub', 'theta'] = da_dx[2]
-        J['a_sub', 'Vx'] = da_dx[3]
-        J['a_sub', 'Vy'] = da_dx[4]
-        J['a_sub', 'r'] = da_dx[5]
-        J['a_sub', 'Rhub'] = da_dx[6]
-        J['a_sub', 'Rtip'] = da_dx[7]
-        J['a_sub', 'pitch'] = da_dx[8]
+        Vx = params['Vx']
+        Vy = params['Vy']
+        sigma_p = params['B']/2.0/pi*params['chord']/params['r']
+        # cl = params['cl_sub']
+        # cd = params['cd_sub']
+        cphi = cos(unknowns['phi_sub'])
+        sphi = sin(unknowns['phi_sub'])
+        B = params['B']
+        Rtip = params['Rtip']
+        r = params['r']
+        Rhub = params['Rhub']
+        factortip = B/2.0*(Rtip - r)/(r*abs(sphi))
+        Ftip = 2.0/pi*acos(exp(-factortip))
 
-        J['ap_sub', 'phi_sub'] = dap_dx[0]
-        J['ap_sub', 'chord'] = dap_dx[1]
-        J['ap_sub', 'theta'] = dap_dx[2]
-        J['ap_sub', 'Vx'] = dap_dx[3]
-        J['ap_sub', 'Vy'] = dap_dx[4]
-        J['ap_sub', 'r'] = dap_dx[5]
-        J['ap_sub', 'Rhub'] = dap_dx[6]
-        J['ap_sub', 'Rtip'] = dap_dx[7]
-        J['ap_sub', 'pitch'] = dap_dx[8]
+        factorhub = B/2.0*(r - Rhub)/(Rhub*abs(sphi))
+        Fhub = 2.0/pi*acos(exp(-factorhub))
+
+        F = Ftip * Fhub
+
+        # dR_dcl = 1/(Vy/Vx)*sigma_p/4.0/F
+        # dR_dcd = -1/(Vy/Vx)*sigma_p*cphi/4.0/F/sphi
+
+        dR_dcl = cphi/(Vy/Vx)*(sigma_p*(sphi)/4.0/F/sphi/cphi) # 1/(Vy/Vx)*sigma_p/4.0/F
+        dR_dcd = cphi/(Vy/Vx)*(sigma_p*(-cphi)/4.0/F/sphi/cphi) # -1/(Vy/Vx)*sigma_p*cphi/4.0/F/sphi
+
+        J['phi_sub', 'cl_sub'] = dR_dcl
+        J['phi_sub', 'cd_sub'] = dR_dcd
+        # J['a_sub', 'phi_sub'] = da_dx[0]
+        # J['a_sub', 'chord'] = da_dx[1]
+        # J['a_sub', 'theta'] = da_dx[2]
+        # J['a_sub', 'Vx'] = da_dx[3]
+        # J['a_sub', 'Vy'] = da_dx[4]
+        # J['a_sub', 'r'] = da_dx[5]
+        # J['a_sub', 'Rhub'] = da_dx[6]
+        # J['a_sub', 'Rtip'] = da_dx[7]
+        # J['a_sub', 'pitch'] = da_dx[8]
+
+        # J['ap_sub', 'phi_sub'] = dap_dx[0]
+        # J['ap_sub', 'chord'] = dap_dx[1]
+        # J['ap_sub', 'theta'] = dap_dx[2]
+        # J['ap_sub', 'Vx'] = dap_dx[3]
+        # J['ap_sub', 'Vy'] = dap_dx[4]
+        # J['ap_sub', 'r'] = dap_dx[5]
+        # J['ap_sub', 'Rhub'] = dap_dx[6]
+        # J['ap_sub', 'Rtip'] = dap_dx[7]
+        # J['ap_sub', 'pitch'] = dap_dx[8]
 
         return J
 
 class MUX(Component):
+    """
+    MUX - Combines all the sections into single variables of arrays
+
+    Inputs: n - Number of sections analyzed across blade
+
+    Outputs: phi, cl, cd, W
+
+    """
     def __init__(self, n):
         super(MUX, self).__init__()
         for i in range(n):
@@ -440,15 +450,18 @@ class MUX(Component):
             self.add_param('cl'+str(i+1), val=0.0)
             self.add_param('cd'+str(i+1), val=0.0)
             self.add_param('W'+str(i+1), val=0.0)
+
         self.add_output('phi', val=np.zeros(n))
         self.add_output('cl', val=np.zeros(n))
         self.add_output('cd', val=np.zeros(n))
         self.add_output('W', val=np.zeros(n))
+
+        self.fd_options['form'] = 'central'
+        self.fd_options['step_type'] = 'relative'
         self.n = n
 
     def solve_nonlinear(self, params, unknowns, resids):
-        n = self.n
-        for i in range(n):
+        for i in range(self.n):
             unknowns['phi'][i] = params['phi'+str(i+1)]
             unknowns['cl'][i] = params['cl'+str(i+1)]
             unknowns['cd'][i] = params['cd'+str(i+1)]
@@ -464,13 +477,19 @@ class MUX(Component):
             J['cl', 'cl'+str(i+1)] = zeros
             J['cd', 'cd'+str(i+1)] = zeros
             J['W', 'W'+str(i+1)] = zeros
-
         return J
 
 class DistributedAeroLoads(Component):
+    """
+    DistributedAeroLoads
+
+    Inputs: n - Number of sections analyzed across blade
+
+    Outputs: Np, Tp
+
+    """
     def __init__(self, n):
         super(DistributedAeroLoads, self).__init__()
-
         self.add_param('chord', shape=n)
         self.add_param('rho', shape=1)
         self.add_param('phi', val=np.zeros(n))
@@ -482,6 +501,7 @@ class DistributedAeroLoads(Component):
         self.add_output('Tp', shape=n)
 
         self.fd_options['form'] = 'central'
+        self.fd_options['step_type'] = 'relative'
         self.n = n
 
     def solve_nonlinear(self, params, unknowns, resids):
@@ -497,18 +517,8 @@ class DistributedAeroLoads(Component):
         Np = np.zeros(n)
         Tp = np.zeros(n)
 
-        dNp_dcl = np.zeros(n)
-        dTp_dcl = np.zeros(n)
-        dNp_dcd = np.zeros(n)
-        dTp_dcd = np.zeros(n)
-        dNp_dphi = np.zeros(n)
-        dTp_dphi = np.zeros(n)
-        dNp_drho = np.zeros(n)
-        dTp_drho = np.zeros(n)
-        dNp_dW = np.zeros(n)
-        dTp_dW = np.zeros(n)
-        dNp_dchord = np.zeros(n)
-        dTp_dchord = np.zeros(n)
+        self.dNp_dcl, self.dTp_dcl, self.dNp_dcd, self.dTp_dcd, self.dNp_dphi, self.dTp_dphi, self.dNp_drho, self.dTp_drho, self.dNp_dW, self.dTp_dW, self.dNp_dchord, self.dTp_dchord = \
+            np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n)
 
         for i in range(n):
             cphi = cos(phi[i])
@@ -516,37 +526,22 @@ class DistributedAeroLoads(Component):
 
             cn = cl[i]*cphi + cd[i]*sphi  # these expressions should always contain drag
             ct = cl[i]*sphi - cd[i]*cphi
-
             q = 0.5*rho*W[i]**2
             Np[i] = cn*q*chord[i]
             Tp[i] = ct*q*chord[i]
 
-            dNp_dcl[i] = cphi*q*chord[i]
-            dTp_dcl[i] = sphi*q*chord[i]
-            dNp_dcd[i] = sphi*q*chord[i]
-            dTp_dcd[i] = -cphi*q*chord[i]
-            dNp_dphi[i] = (-cl[i]*sphi + cd[i]*cphi)*q*chord[i]
-            dTp_dphi[i] = (cl[i]*cphi + cd[i]*sphi)*q*chord[i]
-            dNp_drho[i] = cn*q/rho*chord[i]
-            dTp_drho[i] = ct*q/rho*chord[i]
-            dNp_dW[i] = cn*0.5*rho*2*W[i]*chord[i]
-            dTp_dW[i] = ct*0.5*rho*2*W[i]*chord[i]
-            dNp_dchord[i] = cn*q
-            dTp_dchord[i] = ct*q
-
-
-        self.dNp_dcl = dNp_dcl
-        self.dTp_dcl = dTp_dcl
-        self.dNp_dcd = dNp_dcd
-        self.dTp_dcd = dTp_dcd
-        self.dNp_dphi = dNp_dphi
-        self.dTp_dphi = dTp_dphi
-        self.dNp_drho = dNp_drho
-        self.dTp_drho = dTp_drho
-        self.dNp_dW = dNp_dW
-        self.dTp_dW = dTp_dW
-        self.dNp_dchord = dNp_dchord
-        self.dTp_dchord = dTp_dchord
+            self.dNp_dcl[i] = cphi*q*chord[i]
+            self.dTp_dcl[i] = sphi*q*chord[i]
+            self.dNp_dcd[i] = sphi*q*chord[i]
+            self.dTp_dcd[i] = -cphi*q*chord[i]
+            self.dNp_dphi[i] = (-cl[i]*sphi + cd[i]*cphi)*q*chord[i]
+            self.dTp_dphi[i] = (cl[i]*cphi + cd[i]*sphi)*q*chord[i]
+            self.dNp_drho[i] = cn*q/rho*chord[i]
+            self.dTp_drho[i] = ct*q/rho*chord[i]
+            self.dNp_dW[i] = cn*0.5*rho*2*W[i]*chord[i]
+            self.dTp_dW[i] = ct*0.5*rho*2*W[i]*chord[i]
+            self.dNp_dchord[i] = cn*q
+            self.dTp_dchord[i] = ct*q
 
         unknowns['Np'] = Np
         unknowns['Tp'] = Tp
@@ -554,42 +549,35 @@ class DistributedAeroLoads(Component):
     def linearize(self, params, unknowns, resids):
 
         J = {}
-        dNp_dcl = self.dNp_dcl
-        dTp_dcl = self.dTp_dcl
-        dNp_dcd = self.dNp_dcd
-        dTp_dcd = self.dTp_dcd
-        dNp_dphi = self.dNp_dphi
-        dTp_dphi = self.dTp_dphi
-        dNp_drho = self.dNp_drho
-        dTp_drho = self.dTp_drho
-        dNp_dW = self.dNp_dW
-        dTp_dW = self.dTp_dW
-        dNp_dchord = self.dNp_dchord
-        dTp_dchord = self.dTp_dchord
-
         # # add chain rule for conversion to radians
         ## TODO: Check radian conversion
         # ridx = [2, 6, 7, 9, 10, 13]
         # dNp_dz[ridx, :] *= pi/180.0
         # dTp_dz[ridx, :] *= pi/180.0
-
-        J['Np', 'cl'] = np.diag(dNp_dcl)
-        J['Tp', 'cl'] = np.diag(dTp_dcl)
-        J['Np', 'cd'] = np.diag(dNp_dcd)
-        J['Tp', 'cd'] = np.diag(dTp_dcd)
-        J['Np', 'phi'] = np.diag(dNp_dphi)
-        J['Tp', 'phi'] = np.diag(dTp_dphi)
-        J['Np', 'rho'] = dNp_drho
-        J['Tp', 'rho'] = dTp_drho
-        J['Np', 'W'] = np.diag(dNp_dW) # rho*W*cn*chord
-        J['Tp', 'W'] = np.diag(dTp_dW)
-        J['Np', 'chord'] = np.diag(dNp_dchord)
-        J['Tp', 'chord'] = np.diag(dTp_dchord)
-
+        J['Np', 'cl'] = np.diag(self.dNp_dcl)
+        J['Tp', 'cl'] = np.diag(self.dTp_dcl)
+        J['Np', 'cd'] = np.diag(self.dNp_dcd)
+        J['Tp', 'cd'] = np.diag(self.dTp_dcd)
+        J['Np', 'phi'] = np.diag(self.dNp_dphi)
+        J['Tp', 'phi'] = np.diag(self.dTp_dphi)
+        J['Np', 'rho'] = self.dNp_drho
+        J['Tp', 'rho'] = self.dTp_drho
+        J['Np', 'W'] = np.diag(self.dNp_dW) # rho*W*cn*chord
+        J['Tp', 'W'] = np.diag(self.dTp_dW)
+        J['Np', 'chord'] = np.diag(self.dNp_dchord)
+        J['Tp', 'chord'] = np.diag(self.dTp_dchord)
         return J
 
 class CCEvaluate(Component):
-    def __init__(self, n):
+    """
+    CCEvaluate
+
+    Inputs: n - Number of sections analyzed across blade, nSector - Number of sweeps
+
+    Outputs: CP, CT, CQ, P, T, Q
+
+    """
+    def __init__(self, n, nSector):
         super(CCEvaluate, self).__init__()
 
         self.add_param('Uinf', val=10.0)
@@ -606,8 +594,7 @@ class CCEvaluate(Component):
         self.add_param('Rhub', shape=1)
         self.add_param('nSector', shape=1)
         self.add_param('rotorR', shape=1)
-
-        for i in range(8):
+        for i in range(nSector):
             self.add_param('Np'+str(i+1), val=np.zeros(n))
             self.add_param('Tp'+str(i+1), val=np.zeros(n))
 
@@ -619,9 +606,11 @@ class CCEvaluate(Component):
         self.add_output('CQ', val=0.5)
 
         self.fd_options['form'] = 'central'
+        self.fd_options['step_type'] = 'relative'
         self.n = n
 
     def solve_nonlinear(self, params, unknowns, resids):
+
         r = params['r']
         precurve = params['precurve']
         presweep = params['presweep']
@@ -636,56 +625,28 @@ class CCEvaluate(Component):
         B = params['B']
         rho = params['rho']
         rotorR = params['rotorR']
-
         nsec = int(nSector)
-
         npts = 1 #len(Uinf)
-        T = np.zeros(npts)
-        Q = np.zeros(npts)
-
         n = self.n
-
-        dT_dr = np.zeros((1, n))
-        dQ_dr = np.zeros((1, n))
-        dP_dr = np.zeros((1, n))
-        dT_dprecurve = np.zeros((1, n))
-        dQ_dprecurve = np.zeros((1, n))
-        dP_dprecurve = np.zeros((1, n))
-        dT_dpresweep = np.zeros((1, n))
-        dQ_dpresweep = np.zeros((1, n))
-        dP_dpresweep = np.zeros((1, n))
-        dT_dprecone = 0
-        dQ_dprecone = 0
-        dP_dprecone = 0
-        dT_dRhub = 0
-        dQ_dRhub = 0
-        dP_dRhub = 0
-        dT_dRtip = 0
-        dQ_dRtip = 0
-        dP_dRtip = 0
-        dT_dprecurvetip = 0
-        dQ_dprecurvetip = 0
-        dP_dprecurvetip = 0
-        dT_dpresweeptip = 0
-        dQ_dpresweeptip = 0
-        dP_dpresweeptip = 0
-
         Np = {}
         Tp = {}
-
-        dT_dNp_t = {}
-        dQ_dNp_t = {}
-        dP_dNp_t = {}
-        dT_dTp_t = {}
-        dQ_dTp_t = {}
-        dP_dTp_t = {}
-
         for i in range(8):
             Np['Np' + str(i+1)] = params['Np' + str(i+1)]
             Tp['Tp' + str(i+1)] = params['Tp' + str(i+1)]
+        T = np.zeros(npts)
+        Q = np.zeros(npts)
 
-        args = (r, precurve, presweep, precone,
-            Rhub, Rtip, precurveTip, presweepTip)
+
+        self.dT_dr, self.dQ_dr, self.dP_dr, self.dT_dprecurve, self.dQ_dprecurve, self.dP_dprecurve, self.dT_dpresweep, self.dQ_dpresweep, self.dP_dpresweep, \
+        self.dT_dprecone, self.dQ_dprecone, self.dP_dprecone, self.dT_dRhub, self.dQ_dRhub, self.dP_dRhub, self.dT_dRtip, self.dQ_dRtip, self.dP_dRtip, \
+        self.dT_dprecurvetip, self.dQ_dprecurvetip, self.dP_dprecurvetip, self.dT_dpresweeptip, self.dQ_dpresweeptip, self.dP_dpresweeptip = \
+            np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), \
+            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
+
+
+        self.dT_dNp_tot, self.dQ_dNp_tot, self.dP_dNp_tot, self.dT_dTp_tot, self.dQ_dTp_tot, self.dP_dTp_tot = {}, {}, {}, {}, {}, {}
+
+        args = (r, precurve, presweep, precone, Rhub, Rtip, precurveTip, presweepTip)
 
         for i in range(npts):  # iterate across conditions
 
@@ -734,49 +695,44 @@ class CCEvaluate(Component):
                 dQ_dpresweeptip1 = presweeptipb[1]
                 dP_dpresweeptip1 = presweeptipb[1] * Omega * pi / 30.0
 
-                dT_dNp = np.zeros((1, n))
-                dT_dTp = np.zeros((1, n))
-                dQ_dNp = np.zeros((1, n))
-                dQ_dTp = np.zeros((1, n))
-                dP_dNp = np.zeros((1, n))
-                dP_dTp = np.zeros((1, n))
+                dT_dNp, dT_dTp, dQ_dNp, dQ_dTp, dP_dNp, dP_dTp = np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n)), np.zeros((1, n))
 
-                dT_dNp += [x * B / nsec for x in dT_dNp1] # B * dT_dNp / nsec
-                dT_dNp_t['Np'+str(j+1)] = dT_dNp
+                dT_dNp += [x * B / nsec for x in dT_dNp1]
+                self.dT_dNp_tot['Np'+str(j+1)] = dT_dNp
                 dQ_dNp += [x * B / nsec for x in dQ_dNp1]
-                dQ_dNp_t['Np'+str(j+1)] = dQ_dNp
+                self.dQ_dNp_tot['Np'+str(j+1)] = dQ_dNp
                 dP_dNp += [x * B / nsec for x in dP_dNp1]
-                dP_dNp_t['Np'+str(j+1)] = dP_dNp
+                self.dP_dNp_tot['Np'+str(j+1)] = dP_dNp
                 dT_dTp += [x * B / nsec for x in dT_dTp1]
-                dT_dTp_t['Tp'+str(j+1)] = dT_dTp
+                self.dT_dTp_tot['Tp'+str(j+1)] = dT_dTp
                 dQ_dTp += [x * B / nsec for x in dQ_dTp1]
-                dQ_dTp_t['Tp'+str(j+1)] = dQ_dTp
+                self.dQ_dTp_tot['Tp'+str(j+1)] = dQ_dTp
                 dP_dTp += [x * B / nsec for x in dP_dTp1]
-                dP_dTp_t['Tp'+str(j+1)] = dP_dTp
-                dT_dr += [x * B / nsec for x in dT_dr1]
-                dQ_dr += [x * B / nsec for x in dQ_dr1]
-                dP_dr += [x * B / nsec for x in dP_dr1]
-                dT_dprecurve += [x * B / nsec for x in dT_dprecurve1]
-                dQ_dprecurve += [x * B / nsec for x in dQ_dprecurve1]
-                dP_dprecurve += [x * B / nsec for x in dP_dprecurve1]
-                dT_dpresweep += [x * B / nsec for x in dT_dpresweep1]
-                dQ_dpresweep += [x * B / nsec for x in dQ_dpresweep1]
-                dP_dpresweep += [x * B / nsec for x in dP_dpresweep1]
-                dT_dprecone += dT_dprecone1 * B / nsec
-                dQ_dprecone += dQ_dprecone1 * B / nsec
-                dP_dprecone += dP_dprecone1 * B / nsec
-                dT_dRhub += dT_dRhub1 * B / nsec
-                dQ_dRhub += dQ_dRhub1 * B / nsec
-                dP_dRhub += dP_dRhub1 * B / nsec
-                dT_dRtip += dT_dRtip1 * B / nsec
-                dQ_dRtip += dQ_dRtip1 * B / nsec
-                dP_dRtip += dP_dRtip1 * B / nsec
-                dT_dprecurvetip += dT_dprecurvetip1 * B / nsec
-                dQ_dprecurvetip += dQ_dprecurvetip1 * B / nsec
-                dP_dprecurvetip += dP_dprecurvetip1 * B / nsec
-                dT_dpresweeptip += dT_dpresweeptip1 * B / nsec
-                dQ_dpresweeptip += dQ_dpresweeptip1 * B / nsec
-                dP_dpresweeptip += dP_dpresweeptip1 * B / nsec
+                self.dP_dTp_tot['Tp'+str(j+1)] = dP_dTp
+                self.dT_dr += [x * B / nsec for x in dT_dr1]
+                self.dQ_dr += [x * B / nsec for x in dQ_dr1]
+                self.dP_dr += [x * B / nsec for x in dP_dr1]
+                self.dT_dprecurve += [x * B / nsec for x in dT_dprecurve1]
+                self.dQ_dprecurve += [x * B / nsec for x in dQ_dprecurve1]
+                self.dP_dprecurve += [x * B / nsec for x in dP_dprecurve1]
+                self.dT_dpresweep += [x * B / nsec for x in dT_dpresweep1]
+                self.dQ_dpresweep += [x * B / nsec for x in dQ_dpresweep1]
+                self.dP_dpresweep += [x * B / nsec for x in dP_dpresweep1]
+                self.dT_dprecone += dT_dprecone1 * B / nsec
+                self.dQ_dprecone += dQ_dprecone1 * B / nsec
+                self.dP_dprecone += dP_dprecone1 * B / nsec
+                self.dT_dRhub += dT_dRhub1 * B / nsec
+                self.dQ_dRhub += dQ_dRhub1 * B / nsec
+                self.dP_dRhub += dP_dRhub1 * B / nsec
+                self.dT_dRtip += dT_dRtip1 * B / nsec
+                self.dQ_dRtip += dQ_dRtip1 * B / nsec
+                self.dP_dRtip += dP_dRtip1 * B / nsec
+                self.dT_dprecurvetip += dT_dprecurvetip1 * B / nsec
+                self.dQ_dprecurvetip += dQ_dprecurvetip1 * B / nsec
+                self.dP_dprecurvetip += dP_dprecurvetip1 * B / nsec
+                self.dT_dpresweeptip += dT_dpresweeptip1 * B / nsec
+                self.dQ_dpresweeptip += dQ_dpresweeptip1 * B / nsec
+                self.dP_dpresweeptip += dP_dpresweeptip1 * B / nsec
 
         # Power
         P = Q * Omega*pi/30.0  # RPM to rad/s
@@ -787,59 +743,6 @@ class CCEvaluate(Component):
         CP = P / (q * A * Uinf)
         CT = T / (q * A)
         CQ = Q / (q * rotorR * A)
-
-        dCP_drho = CP * rho
-        dCT_drho = CT * rho
-        dCQ_drho = CQ * rho
-        dCP_drotorR = -2 * P / (q * pi * rotorR**3 * Uinf)
-        dCT_drotorR = -2 * T / (q * pi * rotorR**3)
-        dCQ_drotorR = -3 * Q / (q * pi * rotorR**4)
-        dCP_dUinf = -3 * P / (0.5 * rho * Uinf**4 * A)
-        dCT_dUinf = -2 * T / (0.5 * rho * Uinf**3 * A)
-        dCQ_dUinf = -2 * Q / (0.5 * rho * Uinf**3 * rotorR * A)
-        dP_dOmega = Q * pi / 30.0
-
-        self.dCP_drho = dCP_drho
-        self.dCT_drho = dCT_drho
-        self.dCQ_drho = dCQ_drho
-        self.dCP_drotorR = dCP_drotorR
-        self.dCT_drotorR = dCT_drotorR
-        self.dCQ_drotorR = dCQ_drotorR
-        self.dCP_dUinf = dCP_dUinf
-        self.dCT_dUinf = dCT_dUinf
-        self.dCQ_dUinf = dCQ_dUinf
-        self.dP_dOmega = dP_dOmega
-        self.dT_dNp_t = dT_dNp_t
-        self.dT_dTp_t = dT_dTp_t
-        self.dQ_dNp_t = dQ_dNp_t
-        self.dQ_dTp_t = dQ_dTp_t
-        self.dP_dNp_t = dP_dNp_t
-        self.dP_dTp_t = dP_dTp_t
-        self.dT_dr = dT_dr
-        self.dQ_dr = dQ_dr
-        self.dP_dr = dP_dr
-        self.dT_dprecurve = dT_dprecurve
-        self.dQ_dprecurve = dQ_dprecurve
-        self.dP_dprecurve = dP_dprecurve
-        self.dT_dpresweep = dT_dpresweep
-        self.dQ_dpresweep = dQ_dpresweep
-        self.dP_dpresweep = dP_dpresweep
-        self.dT_dprecone = dT_dprecone
-        self.dQ_dprecone = dQ_dprecone
-        self.dP_dprecone = dP_dprecone
-        self.dT_dRhub = dT_dRhub
-        self.dQ_dRhub = dQ_dRhub
-        self.dP_dRhub = dP_dRhub
-        self.dT_dRtip = dT_dRtip
-        self.dQ_dRtip = dQ_dRtip
-        self.dP_dRtip = dP_dRtip
-        self.dT_dprecurvetip = dT_dprecurvetip
-        self.dQ_dprecurvetip = dQ_dprecurvetip
-        self.dP_dprecurvetip = dP_dprecurvetip
-        self.dT_dpresweeptip = dT_dpresweeptip
-        self.dQ_dpresweeptip = dQ_dpresweeptip
-        self.dP_dpresweeptip = dP_dpresweeptip
-
         unknowns['CP'] = CP[0]
         unknowns['CT'] = CT[0]
         unknowns['CQ'] = CQ[0]
@@ -847,59 +750,55 @@ class CCEvaluate(Component):
         unknowns['T'] = T[0]
         unknowns['Q'] = Q[0]
 
+        self.dCP_drho = CP * rho
+        self.dCT_drho = CT * rho
+        self.dCQ_drho = CQ * rho
+        self.dCP_drotorR = -2 * P / (q * pi * rotorR**3 * Uinf)
+        self.dCT_drotorR = -2 * T / (q * pi * rotorR**3)
+        self.dCQ_drotorR = -3 * Q / (q * pi * rotorR**4)
+        self.dCP_dUinf = -3 * P / (0.5 * rho * Uinf**4 * A)
+        self.dCT_dUinf = -2 * T / (0.5 * rho * Uinf**3 * A)
+        self.dCQ_dUinf = -2 * Q / (0.5 * rho * Uinf**3 * rotorR * A)
+        self.dP_dOmega = Q * pi / 30.0
+
     def linearize(self, params, unknowns, resids):
         J = {}
-
-        dCP_drho = self.dCP_drho
-        dCT_drho = self.dCT_drho
-        dCQ_drho = self.dCQ_drho
-        dCP_drotorR = self.dCP_drotorR
-        dCT_drotorR = self.dCT_drotorR
-        dCQ_drotorR = self.dCQ_drotorR
-
-        dCP_dUinf = self.dCP_dUinf
-        dCT_dUinf = self.dCT_dUinf
-        dCQ_dUinf = self.dCQ_dUinf
-
-        dP_dOmega = self.dP_dOmega
-
-        rho = params['rho']
         Uinf = params['Uinf']
         rotorR = params['rotorR']
 
-        q = 0.5 * rho * Uinf**2
+        q = 0.5 * params['rho'] * Uinf**2
         A = pi * rotorR**2
 
         nSector = int(params['nSector'])
 
         for i in range(nSector):
-            J['CP', 'Np'+str(i+1)] = self.dP_dNp_t['Np'+str(i+1)] / (q * A * Uinf)
-            J['CP', 'Tp'+str(i+1)] = self.dP_dTp_t['Tp'+str(i+1)] / (q * A * Uinf)
-            J['CT', 'Np'+str(i+1)] = self.dT_dNp_t['Np'+str(i+1)] / (q * A)
-            J['CT', 'Tp'+str(i+1)] = self.dT_dTp_t['Tp'+str(i+1)] / (q * A)
-            J['CQ', 'Np'+str(i+1)] = self.dQ_dNp_t['Np'+str(i+1)] / (q * rotorR * A)
-            J['CQ', 'Tp'+str(i+1)] = self.dQ_dTp_t['Tp'+str(i+1)] / (q * rotorR * A)
-            J['P', 'Np'+str(i+1)] = self.dP_dNp_t['Np'+str(i+1)]
-            J['P', 'Tp'+str(i+1)] = self.dP_dTp_t['Tp'+str(i+1)]
-            J['T', 'Np'+str(i+1)] = self.dT_dNp_t['Np'+str(i+1)]
-            J['T', 'Tp'+str(i+1)] = self.dT_dTp_t['Tp'+str(i+1)]
-            J['Q', 'Np'+str(i+1)] = self.dQ_dNp_t['Np'+str(i+1)]
-            J['Q', 'Tp'+str(i+1)] = self.dQ_dTp_t['Tp'+str(i+1)]
+            J['CP', 'Np'+str(i+1)] = self.dP_dNp_tot['Np'+str(i+1)] / (q * A * Uinf)
+            J['CP', 'Tp'+str(i+1)] = self.dP_dTp_tot['Tp'+str(i+1)] / (q * A * Uinf)
+            J['CT', 'Np'+str(i+1)] = self.dT_dNp_tot['Np'+str(i+1)] / (q * A)
+            J['CT', 'Tp'+str(i+1)] = self.dT_dTp_tot['Tp'+str(i+1)] / (q * A)
+            J['CQ', 'Np'+str(i+1)] = self.dQ_dNp_tot['Np'+str(i+1)] / (q * rotorR * A)
+            J['CQ', 'Tp'+str(i+1)] = self.dQ_dTp_tot['Tp'+str(i+1)] / (q * rotorR * A)
+            J['P', 'Np'+str(i+1)] = self.dP_dNp_tot['Np'+str(i+1)]
+            J['P', 'Tp'+str(i+1)] = self.dP_dTp_tot['Tp'+str(i+1)]
+            J['T', 'Np'+str(i+1)] = self.dT_dNp_tot['Np'+str(i+1)]
+            J['T', 'Tp'+str(i+1)] = self.dT_dTp_tot['Tp'+str(i+1)]
+            J['Q', 'Np'+str(i+1)] = self.dQ_dNp_tot['Np'+str(i+1)]
+            J['Q', 'Tp'+str(i+1)] = self.dQ_dTp_tot['Tp'+str(i+1)]
 
-        J['CP', 'Uinf'] = dCP_dUinf
+        J['CP', 'Uinf'] = self.dCP_dUinf
         J['CP', 'Rtip'] = self.dP_dRtip / (q * A * Uinf)
-        J['CP', 'Omega'] = dP_dOmega / (q * A * Uinf)
+        J['CP', 'Omega'] = self.dP_dOmega / (q * A * Uinf)
         J['CP', 'r'] = self.dP_dr / (q * A * Uinf)
         J['CP', 'precurve'] = self.dP_dprecurve / (q * A * Uinf)
         J['CP', 'presweep'] = self.dP_dpresweep / (q * A * Uinf)
         J['CP', 'presweepTip'] = self.dP_dpresweeptip / (q * A * Uinf)
         J['CP', 'precurveTip'] = self.dP_dprecurvetip / (q * A * Uinf)
         J['CP', 'precone'] = self.dP_dprecone / (q * A * Uinf)
-        J['CP', 'rho'] = dCP_drho
+        J['CP', 'rho'] = self.dCP_drho
         J['CP', 'Rhub'] = self.dP_dRhub / (q * A * Uinf)
-        J['CP', 'rotorR'] = dCP_drotorR
+        J['CP', 'rotorR'] = self.dCP_drotorR
 
-        J['CT', 'Uinf'] = dCT_dUinf
+        J['CT', 'Uinf'] = self.dCT_dUinf
         J['CT', 'Rtip'] = self.dT_dRtip / (q * A)
         J['CT', 'Omega'] = 0.0
         J['CT', 'r'] = (self.dT_dr / (q * A))
@@ -908,11 +807,11 @@ class CCEvaluate(Component):
         J['CT', 'presweepTip'] = self.dT_dpresweeptip / (q * A)
         J['CT', 'precurveTip'] = self.dT_dprecurvetip / (q * A)
         J['CT', 'precone'] = self.dT_dprecone / (q * A)
-        J['CT', 'rho'] = dCT_drho
+        J['CT', 'rho'] = self.dCT_drho
         J['CT', 'Rhub'] = self.dT_dRhub / (q * A)
-        J['CT', 'rotorR'] = dCT_drotorR
+        J['CT', 'rotorR'] = self.dCT_drotorR
 
-        J['CQ', 'Uinf'] = dCQ_dUinf
+        J['CQ', 'Uinf'] = self.dCQ_dUinf
         J['CQ', 'Rtip'] = self.dQ_dRtip / (q * rotorR * A)
         J['CQ', 'Omega'] = 0.0
         J['CQ', 'r'] = self.dQ_dr / (q * rotorR * A)
@@ -921,13 +820,13 @@ class CCEvaluate(Component):
         J['CQ', 'presweepTip'] = self.dQ_dpresweeptip / (q * rotorR * A)
         J['CQ', 'precurveTip'] = self.dQ_dprecurvetip / (q * rotorR * A)
         J['CQ', 'precone'] = self.dQ_dprecone / (q * rotorR * A)
-        J['CQ', 'rho'] = dCQ_drho
+        J['CQ', 'rho'] = self.dCQ_drho
         J['CQ', 'Rhub'] = self.dQ_dRhub / (q * rotorR * A)
-        J['CQ', 'rotorR'] = dCQ_drotorR
+        J['CQ', 'rotorR'] = self.dCQ_drotorR
 
         J['P', 'Uinf'] = 0.0
         J['P', 'Rtip'] = self.dP_dRtip
-        J['P', 'Omega'] = dP_dOmega
+        J['P', 'Omega'] = self.dP_dOmega
         J['P', 'r'] = self.dP_dr
         J['P', 'precurve'] = self.dP_dprecurve
         J['P', 'presweep'] = self.dP_dpresweep
@@ -970,21 +869,35 @@ class CCEvaluate(Component):
 class BrentGroup(Group):
     def __init__(self, n, i):
         super(BrentGroup, self).__init__()
-
         self.add('flow', FlowCondition(), promotes=['*'])
         self.add('airfoils', AirfoilComp(n, i), promotes=['*'])
         sub = self.add('sub', Group(), promotes=['*'])
         sub.add('bem', BEM(n, i), promotes=['*'])
-
         sub.ln_solver = ScipyGMRES()
         self.ln_solver = ScipyGMRES()
         self.nl_solver = Brent()
+        # set standard limits
         epsilon = 1e-6
         phi_lower = epsilon
         phi_upper = pi/2
+        # if errf(phi_lower, *args)*errf(phi_upper, *args) > 0:  # an uncommon but possible case
+        #
+        #         if errf(-pi/4, *args) < 0 and errf(-epsilon, *args) > 0:
+        #             phi_lower = -pi/4
+        #             phi_upper = -epsilon
+        #         else:
+        #             phi_lower = pi/2
+        #             phi_upper = pi - epsilon
         self.nl_solver.options['lower_bound'] = phi_lower
         self.nl_solver.options['upper_bound'] = phi_upper
         self.nl_solver.options['state_var'] = 'phi_sub'
+
+    def list_deriv_vars(self):
+
+        inputs = ('Vx', 'Vy', 'chord', 'theta', 'pitch', 'rho', 'mu')
+        outputs = ('phi_sub', 'a_sub', 'ap_sub')
+
+        return inputs, outputs
 
 class LoadsGroup(Group):
     def __init__(self, n):
@@ -1046,6 +959,10 @@ class SweepGroup(Group):
     def __init__(self, nSector, n):
         super(SweepGroup, self).__init__()
 
+        self.add('Uinf', IndepVarComp('Uinf', 0.0), promotes=['*'])
+        self.add('pitch', IndepVarComp('pitch', 0.0), promotes=['*'])
+        self.add('Omega', IndepVarComp('Omega', 0.0), promotes=['*'])
+
         self.add('r', IndepVarComp('r', np.zeros(n)), promotes=['*'])
         self.add('chord', IndepVarComp('chord', np.zeros(n)), promotes=['*'])
         self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
@@ -1054,14 +971,11 @@ class SweepGroup(Group):
         self.add('tilt', IndepVarComp('tilt', 0.0), promotes=['*'])
         self.add('theta', IndepVarComp('theta', np.zeros(n)), promotes=['*'])
         self.add('hubHt', IndepVarComp('hubHt', 0.0), promotes=['*'])
-        self.add('Uinf', IndepVarComp('Uinf', 0.0), promotes=['*'])
-        self.add('pitch', IndepVarComp('pitch', 0.0), promotes=['*'])
         self.add('precurve', IndepVarComp('precurve', np.zeros(n)), promotes=['*'])
         self.add('presweep', IndepVarComp('presweep', np.zeros(n)), promotes=['*'])
         self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
         self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
         self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
-        self.add('Omega', IndepVarComp('Omega', 0.0), promotes=['*'])
         self.add('af', IndepVarComp('af', np.zeros(n), pass_by_obj=True), promotes=['*'])
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
         self.add('init', CCInit(), promotes=['*'])
@@ -1075,17 +989,40 @@ class SweepGroup(Group):
                 self.connect('chord', 'group'+str(i+1)+'.brent'+str(j+1)+'.chord', src_indices=[j])
                 self.connect('r', 'group'+str(i+1)+'.brent'+str(j+1)+'.r', src_indices=[j])
 
+# FlowSweep
 class CCBlade(Group):
 
     def __init__(self, nSector, n):
         super(CCBlade, self).__init__()
 
-        self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'Omega', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'presweepTip', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'hubHt', 'B', 'af', 'bemoptions'])
-        self.add('eval', CCEvaluate(n), promotes=['Uinf', 'Rtip', 'Omega', 'r', 'Rhub', 'B', 'precurve', 'presweep', 'presweepTip', 'precurveTip', 'precone', 'nSector', 'rotorR', 'rho', 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+        self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'presweepTip', 'precone', 'tilt', 'yaw', 'shearExp', 'hubHt', 'B', 'af', 'bemoptions'])
+        self.add('eval', CCEvaluate(n, nSector), promotes=['Uinf', 'Rtip', 'Omega', 'r', 'Rhub', 'B', 'precurve', 'presweep', 'presweepTip', 'precurveTip', 'precone', 'nSector', 'rotorR', 'rho', 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
 
         for i in range(nSector):
             self.connect('load_group.group' + str(i+1) + '.loads.Np', 'eval.Np' + str(i+1))
             self.connect('load_group.group' + str(i+1) + '.loads.Tp', 'eval.Tp' + str(i+1))
+        self.add('obj_cmp', ExecComp('obj = -CP', CP=1.0), promotes=['*'])
+
+class CCBlade2(Group):
+
+    def __init__(self, nSector, n, n2):
+        super(CCBlade2, self).__init__()
+
+        self.add('Uinf', IndepVarComp('Uinf', np.zeros(n2)), promotes=['*'])
+        self.add('pitch', IndepVarComp('pitch', np.zeros(n2)), promotes=['*'])
+        self.add('Omega', IndepVarComp('Omega', np.zeros(n2)), promotes=['*'])
+
+        for i in range(n2):
+            self.add('flow_sweep'+str(i), FlowSweep(nSector, n), promotes=['r', 'Rtip', 'chord', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'B', 'bemoptions', 'af', 'rotorR', 'rho', 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+            self.connect('Uinf', 'flow_sweep'+str(i)+'.Uinf')
+            self.connect('pitch', 'flow_sweep'+str(i)+'.pitch')
+            self.connect('Omega', 'flow_sweep'+str(i)+'.Omega')
+        # self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'Omega', 'r', 'chord', 'theta', 'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'presweepTip', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'hubHt', 'B', 'af', 'bemoptions'])
+        # self.add('eval', CCEvaluate(n), promotes=['Uinf', 'Rtip', 'Omega', 'r', 'Rhub', 'B', 'precurve', 'presweep', 'presweepTip', 'precurveTip', 'precone', 'nSector', 'rotorR', 'rho', 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+        #
+        # for i in range(nSector):
+        #     self.connect('load_group.group' + str(i+1) + '.loads.Np', 'eval.Np' + str(i+1))
+        #     self.connect('load_group.group' + str(i+1) + '.loads.Tp', 'eval.Tp' + str(i+1))
 
         self.add('obj_cmp', ExecComp('obj = -CP', CP=1.0), promotes=['*'])
 
@@ -1317,23 +1254,25 @@ if __name__ == "__main__":
 
     loads.run()
 
-    # test_grad = open('partial_test_grad2.txt', 'w')
-    # power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
+    test_grad = open('partial_test_grad2.txt', 'w')
+    power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
     # power_partial = loads.check_partial_derivatives(out_stream=test_grad)
+
+    n2 = 1
 
     ## Test CCBlade
     ccblade = Problem()
     ccblade.root = CCBlade(nSector, n)
 
     ### SETUP OPTIMIZATION
-    ccblade.driver = pyOptSparseDriver()
-    ccblade.driver.options['optimizer'] = 'SNOPT'
-    ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
-    ccblade.driver.add_objective('obj')
-    recorder = SqliteRecorder('recorder')
-    recorder.options['record_params'] = True
-    recorder.options['record_metadata'] = True
-    ccblade.driver.add_recorder(recorder)
+    # ccblade.driver = pyOptSparseDriver()
+    # ccblade.driver.options['optimizer'] = 'SNOPT'
+    # ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # ccblade.driver.add_objective('obj')
+    # recorder = SqliteRecorder('recorder')
+    # recorder.options['record_params'] = True
+    # recorder.options['record_metadata'] = True
+    # ccblade.driver.add_recorder(recorder)
 
     ccblade.setup(check=False)
 
@@ -1359,7 +1298,8 @@ if __name__ == "__main__":
 
     ccblade.run()
 
-    # test_grad = open('partial_test_grad.txt', 'w')
+    test_grad = open('partial_test_grad.txt', 'w')
+    power_gradients = ccblade.check_total_derivatives(out_stream=test_grad, unknown_list=['CP'])
     # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
     # power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
 
