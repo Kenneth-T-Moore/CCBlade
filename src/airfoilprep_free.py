@@ -617,7 +617,8 @@ class Airfoil(object):
 
         for i in range(len(CoordinateFile)):
             # read in coordinate file
-            airfoil = pyXLIGHT.xfoilAnalysis(CoordinateFile[i])
+            with suppress_stdout_stderr():
+                airfoil = pyXLIGHT.xfoilAnalysis(CoordinateFile[i])
             airfoil.re = Re
             airfoil.mach = 0.00
             airfoil.iter = 1000
@@ -703,7 +704,8 @@ class Airfoil(object):
             coord_file.close()
 
             # read in coordinate file
-            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            with suppress_stdout_stderr():
+                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
             airfoil.re = Re
             airfoil.mach = 0.00
             airfoil.iter = 1000
@@ -867,12 +869,9 @@ class Airfoil(object):
 
             coord_file.close()
 
-            # Stop from outputing
-            sys.stdout = os.devnull
-            sys.stderr = os.devnull
-
             # read in coordinate file
-            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            with suppress_stdout_stderr():
+                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
             airfoil.re = Re
             airfoil.mach = 0.00
             airfoil.iter = 1000
@@ -888,9 +887,6 @@ class Airfoil(object):
                     cl[j] = -10.0
                     cd[j] = 0.0
 
-            # Restart output
-            sys.stdout = sys.__stdout__
-            sys.stderr = sys.__stderr__
             # error handling in case of XFOIL failure
             for k in range(len(cl)):
                 if cl[k] == -10.0:
@@ -1171,7 +1167,303 @@ class Airfoil(object):
 
         return alpha, Re, cl, cd, cm
 
+    def __ClassShape(self, w, x, N1, N2, dz):
 
+            # Class function; taking input of N1 and N2
+            C = np.zeros(len(x))
+            for i in range(len(x)):
+                C[i] = x[i]**N1*((1-x[i])**N2)
+
+            # Shape function; using Bernstein Polynomials
+            n = len(w) - 1  # Order of Bernstein polynomials
+
+            K = np.zeros(n+1)
+            for i in range(0, n+1):
+                K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
+
+            S = np.zeros(len(x))
+            for i in range(len(x)):
+                S[i] = 0
+                for j in range(0, n+1):
+                    S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+
+            # Calculate y output
+            y = np.zeros(len(x))
+            for i in range(len(y)):
+                y[i] = C[i] * S[i] + x[i] * dz
+
+            return y
+
+    def XFOIL_alpha_Re_gradients(self, CST, alpha, Re):
+
+        step_size = 1e-20
+        cs_step = complex(0, step_size)
+        full_gradients = np.zeros(8)
+        z = 0
+        fail_total = 0
+
+        # read in coordinate file
+        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
+        airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates.dat'
+        # TODO: Check to make sure the right file is being read
+        with suppress_stdout_stderr():
+            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+        airfoil.re = Re
+        airfoil.mach = 0.00
+        airfoil.iter = 1000
+
+        # cl, cd, cm, lexitflag = airfoil.solveAlpha(alpha)
+        # if lexitflag:
+        #     cl = -10.0
+        #     cd = 0.0
+        cl_alpha, cd_alpha, cm, lexitflag = airfoil.solveAlphaComplex(alpha+cs_step)
+        if lexitflag:
+            cl_alpha = -10.0
+            cd_alpha = 0.0
+        # TODO: CHECK EQUATION FOR COMPLEX STEP
+        dcl_dalpha = np.imag(cl_alpha)/np.imag(cs_step)
+        dcd_dalpha = np.imag(cd_alpha)/np.imag(cs_step)
+
+        airfoil.re = Re[0][0] + cs_step
+        cl_Re, cd_Re, cm, lexitflag = airfoil.solveAlphaComplex(alpha)
+        if lexitflag:
+            cl_Re = -10.0
+            cd_Re = 0.0
+        dcl_dRe = np.imag(cl_Re)/np.imag(cs_step)
+        dcd_dRe = np.imag(cd_Re)/np.imag(cs_step)
+
+        return dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
+
+    def XFOIL_CST_Gradients(self):
+
+        step_size = 1e-20
+        cs_step = complex(0, step_size)
+        full_gradients = np.zeros(8)
+        z = 0
+        fail_total = 0
+
+        # initialize
+        polars = []
+
+        for i in range(len(CST[0])):
+            n1 = 4
+            wu = np.zeros(n1)
+            wl = np.zeros(n1)
+            for j in range(n1):
+                wu[j] = CST[i][j]
+                wl[j] = CST[i][j + n1]
+            # wu, wl = np.split(af_parameters[i], 2)
+            w1 = np.average(wl)
+            w2 = np.average(wu)
+            if w1 < w2:
+                pass
+            else:
+                higher = wl
+                lower = wu
+                wl = lower
+                wu = higher
+            N = 120
+            dz = 0.
+
+            # Populate x coordinates
+            x = np.ones((N, 1))
+            zeta = np.zeros((N, 1))
+            for z in range(0, N):
+                zeta[z] = 2 * pi / N * z
+                if z == N - 1:
+                    zeta[z] = 2 * pi
+                x[z] = 0.5*(cos(zeta[z])+1)
+
+            # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
+            N1 = 0.5
+            N2 = 1
+
+            try:
+                zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
+                zerind = zerind[0][0]
+            except:
+                zerind = N/2
+
+            xl = np.zeros(zerind)
+            xu = np.zeros(N-zerind)
+
+            for z in range(len(xl)):
+                xl[z] = np.real(x[z])            # Lower surface x-coordinates
+            for z in range(len(xu)):
+                xu[z] = np.real(x[z + zerind])   # Upper surface x-coordinates
+
+            yl = self.__ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+            yu = self.__ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+
+            y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
+            y = y[::-1]
+            # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
+            # coord = [x, y]
+            x1 = np.zeros(len(x))
+            for k in range(len(x)):
+                x1[k] = x[k][0]
+            x = x1
+
+            basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
+            airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates.dat'
+
+            coord_file = open(airfoil_shape_file, 'w')
+
+            print >> coord_file, 'CST'
+            for i in range(len(x)):
+                print >> coord_file, '{:<10f}\t{:<10f}'.format(x[i], y[i])
+
+            coord_file.close()
+
+            # read in coordinate file
+            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            airfoil.re = Re
+            airfoil.mach = 0.00
+            airfoil.iter = 1000
+
+            cl = np.zeros(len(alphas))
+            cd = np.zeros(len(alphas))
+            cm = np.zeros(len(alphas))
+            to_delete = np.zeros(0)
+            for j in range(len(alphas)):
+                angle = alphas[j]
+                cl[j], cd[j], cm[j], lexitflag = airfoil.solveAlpha(angle)
+                if lexitflag:
+                    cl[j] = -10.0
+                    cd[j] = 0.0
+
+            # error handling in case of XFOIL failure
+            for k in range(len(cl)):
+                if cl[k] == -10.0:
+                    if k == 0:
+                        cl[k] = cl[k+1] - cl[k+2] + cl[k+1]
+                        cd[k] = cd[k+1] - cd[k+2] + cd[k+1]
+                    elif k == len(cl)-1:
+                        cl[k] = cl[k-1] - cl[k-2] + cl[k-1]
+                        cd[k] = cd[k-1] - cd[k-2] + cd[k-1]
+                    else:
+                        cl[k] = (cl[k+1] - cl[k-1])/2.0 + cl[k-1]
+                        cd[k] = (cd[k+1] - cd[k-1])/2.0 + cd[k-1]
+                if cl[k] == -10.0 or cl[k] < -2. or cl[k] > 2. or cd[k] < 0.00001 or cd[k] > 0.5 or not np.isfinite(cd[k]) or not np.isfinite(cl[k]):
+                    to_delete = np.append(to_delete, k)
+            cl = np.delete(cl, to_delete)
+            cd = np.delete(cd, to_delete)
+            alphas = np.delete(alphas, to_delete)
+
+
+
+        for i in range(len(CST)):
+
+
+            xph = xdict.copy()
+            xph[i] += cs_step
+
+            [funcs_ph, fail] = total_function(xph, True)
+            L_D = funcs_ph['f']
+            L_D = L_D[0]
+            full_gradients[z] = np.imag(L_D)/np.imag(cs_step)
+            # funcsSens['f']
+            fail_total = fail_total or fail
+            z += 1
+
+
+        return dcl_dCST, dcd_dCST
+
+    def CFDGradients(self):
+
+        import os, sys, shutil, copy
+        sys.path.append(os.environ['SU2_RUN'])
+        import SU2
+
+        # filename = 'free_form_config.cfg'
+        filename = 'inv_NACA0012.cfg'
+        partitions = 0
+        compute = True
+        step = 1e-4
+
+        # Config
+        config = SU2.io.Config(filename)
+        config.NUMBER_PART = partitions
+
+        # State
+        state = SU2.io.State()
+
+        # check for existing files
+        if not compute:
+            config.RESTART_SOL = 'YES'
+            state.find_files(config)
+        else:
+            state.FILES.MESH = config.MESH_FILENAME
+
+        # Direct Solution
+        if compute:
+            info = SU2.run.direct(config)
+            state.update(info)
+            SU2.io.restart2solution(config,state)
+
+        # Adjoint Solution
+        if compute:
+            info = SU2.run.adjoint(config)
+            state.update(info)
+            #SU2.io.restart2solution(config,state)
+
+        # Gradient Projection
+        info = SU2.run.projection(config,step)
+        state.update(info)
+
+        get_gradients = info.get('GRADIENTS')
+        adjoint_gradient_cd = get_gradients.get('DRAG')
+        adjoint_gradient_cl = get_gradients.get('LIFT')
+
+        # return state
+        x_old = [x1, x2, x3, x4, x5, x6, x7, x8]
+        fd_step = 1e-3
+        n = len(x_old)
+        m = 38
+
+        geometric_gradient = np.zeros((n, m))
+        wl_old = [x_old[0], x_old[1], x_old[2], x_old[3]]
+        wu_old = [x_old[4], x_old[5], x_old[6], x_old[7]]
+        design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
+        for i in range(0, n):
+            x_new = deepcopy(x_old)
+            x_new[i] += fd_step
+            wl_new = [x_new[0], x_new[1], x_new[2], x_new[3]]
+            wu_new = [x_new[4], x_new[5], x_new[6], x_new[7]]
+            airfoil_CST_new = CST_shape(wl_new, wu_new, dz, N)
+            airfoil_CST_old = CST_shape(wl_old, wu_old, dz, N)
+            coor_new = airfoil_CST_new.airfoil_coor()
+            coord_old = airfoil_CST_old.airfoil_coor()
+            j = 0
+            for coor_d in design:
+                if (coor_new[1][coor_d] - coord_old[1][coor_d]).real == 0:
+                    geometric_gradient[i][j] = 0
+                else:
+                    geometric_gradient[i][j] = 1/((coor_new[1][coor_d] - coord_old[1][coor_d]).real / fd_step)
+                j += 1
+        step_size = 1e-20
+        cs_step = complex(0, step_size)
+
+        geometric_gradient = np.zeros((n, m))
+        wl_old = [x_old[0], x_old[1], x_old[2], x_old[3]]
+        wu_old = [x_old[4], x_old[5], x_old[6], x_old[7]]
+        design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
+        for i in range(0, n):
+            x_new = deepcopy(x_old)
+            x_new[i] += cs_step
+            wl_new = [x_new[0], x_new[1], x_new[2], x_new[3]]
+            wu_new = [x_new[4], x_new[5], x_new[6], x_new[7]]
+            airfoil_CST_new = CST_shape(wl_new, wu_new, dz, N)
+            airfoil_CST_old = CST_shape(wl_old, wu_old, dz, N)
+            coor_new = airfoil_CST_new.airfoil_coor()
+            coord_old = airfoil_CST_old.airfoil_coor()
+            j = 0
+            for coor_d in design:
+                if coor_new[1][coor_d].imag == 0:
+                    geometric_gradient[i][j] = 0
+                else:
+                    geometric_gradient[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
+                j += 1
 
     def plot(self, single_figure=True):
         """plot cl/cd/cm polars
@@ -1467,3 +1759,32 @@ if __name__ == '__main__':
                 plt.text(0.2, 0.8, 'Re = ' + str(p.Re/1e6) + ' million', transform=ax.transAxes)
 
             plt.show()
+# Define a context manager to suppress stdout and stderr.
+class suppress_stdout_stderr(object):
+    '''
+    A context manager for doing a "deep suppression" of stdout and stderr in
+    Python, i.e. will suppress all print, even if the print originates in a
+    compiled C/Fortran sub-function.
+       This will not suppress raised exceptions, since exceptions are printed
+    to stderr just before a script exits, and after the context manager has
+    exited (at least, I think that is why it lets exceptions through).
+
+    '''
+    def __init__(self):
+        # Open a pair of null files
+        self.null_fds =  [os.open(os.devnull,os.O_RDWR) for x in range(2)]
+        # Save the actual stdout (1) and stderr (2) file descriptors.
+        self.save_fds = (os.dup(1), os.dup(2))
+
+    def __enter__(self):
+        # Assign the null pointers to stdout and stderr.
+        os.dup2(self.null_fds[0],1)
+        os.dup2(self.null_fds[1],2)
+
+    def __exit__(self, *_):
+        # Re-assign the real stdout/stderr back to (1) and (2)
+        os.dup2(self.save_fds[0],1)
+        os.dup2(self.save_fds[1],2)
+        # Close the null files
+        os.close(self.null_fds[0])
+        os.close(self.null_fds[1])

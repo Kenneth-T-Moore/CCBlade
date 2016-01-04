@@ -284,12 +284,13 @@ class AirfoilComp(Component):
 
     def linearize(self, params, unknowns, resids):
         J = {}
-        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe, dcl_dcst, dcd_dcst = self.cst_methodology_dv(params['cst'][self.i], params['alpha_sub'], params['Re_sub'])
-        J['cl_sub', 'alpha_sub'] = dcl_dalpha
-        J['cl_sub', 'Re_sub'] = dcl_dRe
+        cl, cd, dcl_dcst, dcd_dcst = self.cst_methodology_dv(params['cst'][self.i], params['alpha_sub'], params['Re_sub'])
+        unknowns['cl_sub'], unknowns['cd_sub'] = cl, cd
+        J['cl_sub', 'alpha_sub'] = unknowns['dcl_dalpha']
+        J['cl_sub', 'Re_sub'] = unknowns['dcl_dRe']
         J['cl_sub', 'cst'] = dcl_dcst
-        J['cd_sub', 'alpha_sub'] = dcd_dalpha
-        J['cd_sub', 'Re_sub'] = dcd_dRe
+        J['cd_sub', 'alpha_sub'] = unknowns['dcd_dalpha']
+        J['cd_sub', 'Re_sub'] = unknowns['dcd_dRe']
         J['cd_sub', 'cst'] = dcd_dcst
         return J
 
@@ -298,15 +299,16 @@ class AirfoilComp(Component):
         alpha, Re, cl, cd, cm = self.af.createDataGrid()
         global function_calls_XFOIL
         function_calls_XFOIL += 1
-        try:
-            dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.__XFOILGradients()
-        except:
-            dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = 0.0, 0.0, 0.0, 0.0
+        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.XFOIL_alpha_Re_gradients(CST, alpha, Re)
+        # dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = 0.0, 0.0, 0.0, 0.0
         return cl, cd, dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
-    def cst_methodology_dv(self, af, alpha, Re):
-        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe, dcl_dcst, dcd_dcst = self.af.__CFDGradients()
-        return dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe, dcl_dcst, dcd_dcst
+    def cst_methodology_dv(self, af, alpha, Re, CFD=False):
+        if CFD:
+            cl, cd, dcl_dcst, dcd_dcst = self.af.CFDGradients()
+        else:
+            cl, cd, dcl_dcst, dcd_dcst = self.af.XFOIL_CST_Gradients()
+        return cl, cd, dcl_dcst, dcd_dcst
 
 class BEM(Component):
     """
@@ -390,9 +392,7 @@ class BEM(Component):
             unknowns['ap_sub'] = ap
             unknowns['da_dx'] = da_dx
             unknowns['dap_dx'] = dap_dx
-            print "fzero", fzero
-            print "r", r
-            print "cl", params['cl_sub']
+
         self.dR_dx = dR_dx
         self.da_dx = da_dx
         self.dap_dx = dap_dx
@@ -496,7 +496,6 @@ class MUX(Component):
             unknowns['cl'][i] = params['cl'+str(i+1)]
             unknowns['cd'][i] = params['cd'+str(i+1)]
             unknowns['W'][i] = params['W'+str(i+1)]
-        print "MUX"
 
     def linearize(self, params, unknowns, resids):
         n = self.n
@@ -545,7 +544,6 @@ class DistributedAeroLoads(Component):
         cd = params['cd']
         W = params['W']
         n = self.n
-        print "DISTRIBUTED LOADS"
 
         Np = np.zeros(n)
         Tp = np.zeros(n)
@@ -1203,11 +1201,13 @@ if __name__ == "__main__":
     loads['cst'] = CST
     loads['bemoptions'] = bemoptions
 
+    # measure wall time
+    import time
+    t0 = time.time()
     loads.run()
+    print time.time() - t0, "seconds wall time"
 
-    print "Np", loads['Np']
-    print "Tp", loads['Tp']
-    print "DONE"
+    print function_calls_XFOIL
 
     # test_grad = open('partial_test_grad2.txt', 'w')
     # power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
@@ -1251,7 +1251,10 @@ if __name__ == "__main__":
     ccblade['cst'] = CST
     ccblade['bemoptions'] = bemoptions
 
+    t0 = time.time()
     ccblade.run()
+    print time.time() - t0, "seconds wall time"
+
 
     # test_grad = open('partial_test_grad.txt', 'w')
     # power_gradients = ccblade.check_total_derivatives(out_stream=test_grad, unknown_list=['CP'])
@@ -1261,4 +1264,4 @@ if __name__ == "__main__":
     print 'CP', ccblade['CP']
     print 'CT', ccblade['CT']
     print 'CQ', ccblade['CQ']
-    print 'DONE'
+    print 'Function Calls', function_calls_XFOIL
