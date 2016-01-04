@@ -14,7 +14,7 @@ class Brent(NonLinearSolver):
         super(Brent, self).__init__()
 
         opt = self.options
-        opt.add_option('xtol', 0, 
+        opt.add_option('xtol', 0.,
             desc='The routine converges when a root is known to lie within xtol of the value return. Should be >= 0. '
                  'The routine modifies this to take into account the relative precision of doubles.')
 

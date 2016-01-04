@@ -145,12 +145,12 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
         print "Generating gradients for Test 1. Please wait..."
         power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
-        # power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+        power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q'])
         # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
         print "Gradients generated for Test 1."
 
         self.loads_gradients = loads_gradients
-        # self.power_gradients = power_gradients
+        self.power_gradients = power_gradients
         self.n = len(r)
         self.npts = 1  # len(Uinf)
 
