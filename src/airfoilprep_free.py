@@ -1223,6 +1223,7 @@ class Airfoil(object):
 
             return y
 
+    @classmethod
     def xfoilFlowGradients(self, CST, alpha, Re):
 
         step_size = 1e-20
@@ -1260,6 +1261,7 @@ class Airfoil(object):
 
         return dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
+    @classmethod
     def xfoilGradients(self, CST, alpha, Re):
         n2 = 1
         n1 = len(CST)/2
@@ -1290,7 +1292,7 @@ class Airfoil(object):
         step_size = 1e-20
         cs_step = complex(0, step_size)
         dcl_dcst, dcd_dcst = np.zeros(8), np.zeros(8)
-        cl, cd = self.CST_Real(alpha, Re, wl, wu)
+        cl, cd = self.cstReal(alpha, Re, wl, wu)
 
         for i in range(len(wl)):
             wl_complex = wl.copy()
@@ -1395,7 +1397,7 @@ class Airfoil(object):
 
         # polars.append(polarType(Re, alphas, cl, cd, cm))
 
-    def CST_Real(self, alpha, Re, wl, wu):
+    def cstReal(self, alpha, Re, wl, wu):
         # wl = self.wl
         # wu = self.wu
         N = self.N
@@ -1465,53 +1467,90 @@ class Airfoil(object):
             cd = 0.0
         return cl, cd
 
-    def cfdGradients(self):
+    @classmethod
+    def cfdGradients(self, CST, alpha, Re):
 
         import os, sys, shutil, copy
         sys.path.append(os.environ['SU2_RUN'])
         import SU2
 
         # filename = 'free_form_config.cfg'
-        filename = 'inv_NACA0012.cfg'
+        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
+        filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
+        # filename = 'inv_NACA0012.cfg'
         partitions = 0
         compute = True
         step = 1e-4
+        iterations = 500
 
-        # Config
+        # Config and state
         config = SU2.io.Config(filename)
+        state  = SU2.io.State()
         config.NUMBER_PART = partitions
+        config.EXT_ITER    = iterations
 
-        # State
-        state = SU2.io.State()
+        # find solution files if they exist
+        state.find_files(config)
 
-        # check for existing files
-        if not compute:
-            config.RESTART_SOL = 'YES'
-            state.find_files(config)
-        else:
-            state.FILES.MESH = config.MESH_FILENAME
+        konfig = copy.deepcopy(config)
+        ztate  = copy.deepcopy(state)
 
-        # Direct Solution
-        if compute:
-            info = SU2.run.direct(config)
-            state.update(info)
-            SU2.io.restart2solution(config,state)
+        konfig.AoA = np.degrees(alpha)
+        konfig.MACH_NUMBER = 0.05
+        #TODO : ADD REYNOLDS NUMBER
+
+        cd = SU2.eval.func('DRAG', konfig, ztate)
+        cl = SU2.eval.func('LIFT', konfig, ztate)
+        cm = SU2.eval.func('MOMENT_Z', konfig, ztate)
+
+        # # check for existing files
+        # if not compute:
+        #     config.RESTART_SOL = 'YES'
+        #     state.find_files(config)
+        # else:
+        #     state.FILES.MESH = config.MESH_FILENAME
+        #
+        # # Direct Solution
+        # if compute:
+        #     info = SU2.run.direct(config)
+        #     state.update(info)
+        #     SU2.io.restart2solution(config,state)
+        #
+        # # Adjoint Solution
+        # if compute:
+        #     info = SU2.run.adjoint(config)
+        #     state.update(info)
+        #     #SU2.io.restart2solution(config,state)
+        #
+        # # Gradient Projection
+        # info = SU2.run.projection(config,step)
+        # state.update(info)
+        #
+        # get_gradients = info.get('GRADIENTS')
+        # adjoint_gradient_cd = get_gradients.get('DRAG')
+        # adjoint_gradient_cl = get_gradients.get('LIFT')
 
         # Adjoint Solution
-        if compute:
-            info = SU2.run.adjoint(config)
-            state.update(info)
-            #SU2.io.restart2solution(config,state)
+        dcl_dcst = np.zeros(8)
+        dcd_dcst = np.zeros(8)
+
+        info = SU2.run.adjoint(config)
+        state.update(info)
+        #SU2.io.restart2solution(config,state)
 
         # Gradient Projection
         info = SU2.run.projection(config,step)
         state.update(info)
 
         get_gradients = info.get('GRADIENTS')
-        adjoint_gradient_cd = get_gradients.get('DRAG')
-        adjoint_gradient_cl = get_gradients.get('LIFT')
+        dcl_dx = get_gradients.get('LIFT')
+        dcd_dx = get_gradients.get('DRAG')
+
 
         # return state
+
+        # Gradients
+
         x_old = [x1, x2, x3, x4, x5, x6, x7, x8]
         fd_step = 1e-3
         n = len(x_old)
@@ -1560,6 +1599,7 @@ class Airfoil(object):
                 else:
                     geometric_gradient[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
                 j += 1
+        return cl, cd, dcl_dcst, dcd_dcst
 
     def plot(self, single_figure=True):
         """plot cl/cd/cm polars

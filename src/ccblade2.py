@@ -162,7 +162,7 @@ class FlowCondition(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
 
@@ -277,6 +277,7 @@ class AirfoilComp(Component):
             unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = 0.0, 0.35, 0.0, 0.0, 0.0, 0.0
         else:
             unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = self.cst_methodology(params['cst'][self.i], params['alpha_sub'], params['Re_sub'])
+        cl, cd, dcl_dcst, dcd_dcst = self.cst_methodology_dv(params['cst'][self.i], params['alpha_sub'], params['Re_sub'], CFD=True)
 
     def list_deriv_vars(self):
         inputs = ('alpha_sub', 'Re_sub')
@@ -306,9 +307,9 @@ class AirfoilComp(Component):
 
     def cst_methodology_dv(self, CST, alpha, Re, CFD=False):
         if CFD:
-            cl, cd, dcl_dcst, dcd_dcst = self.af.cfdGradients()
+            cl, cd, dcl_dcst, dcd_dcst = Airfoil.cfdGradients(CST, alpha, Re)
         else:
-            cl, cd, dcl_dcst, dcd_dcst = self.af.xfoilGradients(CST, alpha, Re)
+            cl, cd, dcl_dcst, dcd_dcst = Airfoil.xfoilGradients(CST, alpha, Re)
         return cl, cd, dcl_dcst, dcd_dcst
 
 class BEM(Component):
@@ -355,7 +356,7 @@ class BEM(Component):
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
         self.i = i
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
         pass
@@ -928,7 +929,7 @@ class BrentGroup(Group):
         self.nl_solver.options['rtol'] = rtol[0] #1e-6
         self.nl_solver.options['state_var'] = 'phi_sub'
 
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
         self.fd_options['step_type'] = 'relative'
         self.fd_options['form'] = 'central'
 
