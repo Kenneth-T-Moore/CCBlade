@@ -254,6 +254,7 @@ class AirfoilComp(Component):
         self.add_param('alpha_sub', shape=1)
         self.add_param('Re_sub', shape=1)
         self.add_param('cst', val=np.zeros((n, 8))) #, pass_by_obj=True)
+        self.add_param('CFD', val=False, pass_by_obj=True)
 
         self.add_output('cl_sub', shape=1)
         self.add_output('cd_sub', shape=1)
@@ -264,7 +265,7 @@ class AirfoilComp(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
         self.i = i
 
     def solve_nonlinear(self, params, unknowns, resids):
@@ -284,7 +285,7 @@ class AirfoilComp(Component):
 
     def linearize(self, params, unknowns, resids):
         J = {}
-        cl, cd, dcl_dcst, dcd_dcst = self.cst_methodology_dv(params['cst'][self.i], params['alpha_sub'], params['Re_sub'])
+        cl, cd, dcl_dcst, dcd_dcst = self.cst_methodology_dv(params['cst'][self.i], params['alpha_sub'], params['Re_sub'], CFD=params['CFD'])
         unknowns['cl_sub'], unknowns['cd_sub'] = cl, cd
         J['cl_sub', 'alpha_sub'] = unknowns['dcl_dalpha']
         J['cl_sub', 'Re_sub'] = unknowns['dcl_dRe']
@@ -960,6 +961,7 @@ class LoadsGroup(Group):
         self.add('presweep', IndepVarComp('presweep', val=np.zeros(n)), promotes=['*'])
         # self.add('af', IndepVarComp('af', val=np.zeros(n)), promotes=['*'])
         self.add('cst', IndepVarComp('cst', val=np.zeros((n, 8))), promotes=['*'])
+        self.add('CFD', IndepVarComp('CFD', False, pass_by_obj=True), promotes=['*'])
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
         self.add('shearExp', IndepVarComp('shearExp', 0.0), promotes=['*'])
         self.add('init', CCInit(), promotes=['*'])
@@ -1020,6 +1022,7 @@ class SweepGroup(Group):
         self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
         # self.add('af', IndepVarComp('af', np.zeros(n)), promotes=['*'])
         self.add('cst', IndepVarComp('cst', val=np.zeros((n, 8))), promotes=['*'])
+        self.add('CFD', IndepVarComp('CFD', False, pass_by_obj=True), promotes=['*'])
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
         self.add('shearExp', IndepVarComp('shearExp', 0.0), promotes=['*'])
         self.add('init', CCInit(), promotes=['*'])
@@ -1210,6 +1213,7 @@ if __name__ == "__main__":
     loads['azimuth'] = np.radians(azimuth)
     loads['cst'] = CST
     loads['bemoptions'] = bemoptions
+    loads['CFD'] = False
 
     # measure wall time
     import time
@@ -1262,6 +1266,7 @@ if __name__ == "__main__":
     ccblade['pitch'] = np.radians(pitch)
     ccblade['cst'] = CST
     ccblade['bemoptions'] = bemoptions
+    loads['CFD'] = False
 
     t0 = time.time()
     ccblade.run()
