@@ -85,6 +85,7 @@ class xfoilAnalysis():
                 # y.append(complex(string.split(line)[1]))
             except:
                 pass
+        f.close()
         # end if
         # for i in range(len(airfoil_file[0])):
         #     x.append(airfoil_file[0][i])
@@ -94,7 +95,7 @@ class xfoilAnalysis():
 
         self.setCoordinates(self.x, self.y)
         self.setCoordinatesComplex(self.x, self.y)
-        
+
         return
 
     def setCoordinates(self,x,y):

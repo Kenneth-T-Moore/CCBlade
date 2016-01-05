@@ -299,15 +299,15 @@ class AirfoilComp(Component):
         alpha, Re, cl, cd, cm = self.af.createDataGrid()
         global function_calls_XFOIL
         function_calls_XFOIL += 1
-        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.XFOIL_alpha_Re_gradients(CST, alpha, Re)
+        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.xfoilFlowGradients(CST, alpha, Re)
         # dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = 0.0, 0.0, 0.0, 0.0
         return cl, cd, dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
-    def cst_methodology_dv(self, af, alpha, Re, CFD=False):
+    def cst_methodology_dv(self, CST, alpha, Re, CFD=False):
         if CFD:
-            cl, cd, dcl_dcst, dcd_dcst = self.af.CFDGradients()
+            cl, cd, dcl_dcst, dcd_dcst = self.af.cfdGradients()
         else:
-            cl, cd, dcl_dcst, dcd_dcst = self.af.XFOIL_CST_Gradients()
+            cl, cd, dcl_dcst, dcd_dcst = self.af.xfoilGradients(CST, alpha, Re)
         return cl, cd, dcl_dcst, dcd_dcst
 
 class BEM(Component):
@@ -662,7 +662,7 @@ class CCEvaluate(Component):
         n = self.n
         Np = {}
         Tp = {}
-        for i in range(8):
+        for i in range(nSector):
             Np['Np' + str(i+1)] = params['Np' + str(i+1)]
             Tp['Tp' + str(i+1)] = params['Tp' + str(i+1)]
         T = np.zeros(npts)
@@ -1167,7 +1167,7 @@ if __name__ == "__main__":
     yaw = 0.0
     shearExp = 0.2
     hubHt = 80.0
-    nSector = 8
+    nSector = 4 #8
 
     # set conditions
     Uinf = 10.0
@@ -1180,6 +1180,16 @@ if __name__ == "__main__":
     ## Test LoadsGroup
     loads = Problem()
     root = loads.root = LoadsGroup(n)
+
+    loads.driver = pyOptSparseDriver()
+    loads.driver.options['optimizer'] = 'SNOPT'
+    loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    loads.driver.add_objective('obj')
+    recorder = SqliteRecorder('recorder')
+    recorder.options['record_params'] = True
+    recorder.options['record_metadata'] = True
+    loads.driver.add_recorder(recorder)
+
     loads.setup(check=False)
 
     loads['Rhub'] = Rhub
@@ -1209,9 +1219,11 @@ if __name__ == "__main__":
 
     print function_calls_XFOIL
 
-    # test_grad = open('partial_test_grad2.txt', 'w')
+    test_grad = open('partial_test_grad2.txt', 'w')
     # power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
     # power_partial = loads.check_partial_derivatives(out_stream=test_grad)
+
+
 
     n2 = 1
 
