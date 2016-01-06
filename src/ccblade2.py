@@ -72,12 +72,12 @@ class WindComponents(Component):
     def solve_nonlinear(self, params, unknowns, resids):
         unknowns['Vx'], unknowns['Vy'] = _bem.windcomponents(params['r'], params['precurve'], params['presweep'], params['precone'], params['yaw'], params['tilt'], params['azimuth'], params['Uinf'], params['Omega'], params['hubHt'], params['shearExp'])
 
-    # def list_deriv_vars(self):
-    #
-    #     inputs = ('r', 'precurve', 'presweep', 'Uinf', 'precone', 'azimuth', 'tilt', 'yaw', 'Omega', 'hubHt')
-    #     outputs = ('Vx', 'Vy')
-    #
-    #     return inputs, outputs
+    def list_deriv_vars(self):
+
+        inputs = ('r', 'precurve', 'presweep', 'Uinf', 'precone', 'azimuth', 'tilt', 'yaw', 'Omega', 'hubHt')
+        outputs = ('Vx', 'Vy')
+
+        return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
         J = {}
@@ -180,12 +180,12 @@ class FlowCondition(Component):
         unknowns['W_sub'] = W
         unknowns['Re_sub'] = Re
 
-    # def list_deriv_vars(self):
-    #
-    #     inputs = ('Vx', 'Vy', 'theta', 'pitch', 'rho', 'mu', 'phi_sub', 'a_sub', 'ap_sub')
-    #     outputs = ('alpha_sub', 'W_sub', 'Re_sub')
-    #
-    #     return inputs, outputs
+    def list_deriv_vars(self):
+
+        inputs = ('Vx', 'Vy', 'theta', 'pitch', 'rho', 'mu', 'phi_sub', 'a_sub', 'ap_sub')
+        outputs = ('alpha_sub', 'W_sub', 'Re_sub')
+
+        return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
 
@@ -279,10 +279,10 @@ class AirfoilComp(Component):
         unknowns['cl_sub'], unknowns['cd_sub'] = params['af'][self.i].evaluate(params['alpha_sub'], params['Re_sub'])
         unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = params['af'][self.i].derivatives(params['alpha_sub'], params['Re_sub'])
 
-    # def list_deriv_vars(self):
-    #     inputs = ('alpha_sub', 'Re_sub')
-    #     outputs = ('cl_sub', 'cd_sub')
-    #     return inputs, outputs
+    def list_deriv_vars(self):
+        inputs = ('alpha_sub', 'Re_sub')
+        outputs = ('cl_sub', 'cd_sub')
+        return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
         J = {}
@@ -945,12 +945,12 @@ class BrentGroup(Group):
         sub.nl_solver.options['upper_bound'] = phi_upper
         sub.nl_solver.options['state_var'] = 'phi_sub'
         # self.fd_options['force_fd'] = True
-    # def list_deriv_vars(self):
-    #
-    #     inputs = ('Vx', 'Vy', 'chord', 'theta', 'pitch', 'rho', 'mu')
-    #     outputs = ('phi_sub', 'a_sub', 'ap_sub')
-    #
-    #     return inputs, outputs
+    def list_deriv_vars(self):
+
+        inputs = ('Vx', 'Vy', 'chord', 'theta', 'pitch', 'rho', 'mu')
+        outputs = ('phi_sub', 'a_sub', 'ap_sub')
+
+        return inputs, outputs
 
 class LoadsGroup(Group):
     def __init__(self, n):

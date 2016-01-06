@@ -17,954 +17,965 @@ import numpy as np
 from math import pi
 from os import path
 from openmdao.api import IndepVarComp, Problem, Group
-from utilities import check_gradient_unit_test #, check_for_missing_unit_tests
+from utilities import check_gradient_unit_test, check_gradient_total
 
-from ccblade2 import CCAirfoil, CCBlade, LoadsGroup, BrentGroup, AirfoilComp, FlowCondition, DistributedAeroLoads, WindComponents, CCInit, CCEvaluate
+from ccblade2 import CCAirfoil, CCBlade, LoadsGroup, BrentGroup, AirfoilComp, FlowCondition, \
+    DistributedAeroLoads, WindComponents, CCInit, CCEvaluate
+import ccblade
 
-# class TestGradientsClass(unittest.TestCase):
-#     @classmethod
-#     def setUpClass(cls):
-#        pass
-#
-#
-# class TestGradientsPower_Loads(TestGradientsClass):
-#
-#     @classmethod
-#     def setUpClass(self):
-#         super(TestGradientsPower_Loads, self).setUpClass()
-#         # geometry
-#         Rhub = 1.5
-#         Rtip = 63.0
-#
-#         r = np.array([2.8667, 5.6000, 8.3333, 11.7500, 15.8500, 19.9500, 24.0500,
-#                       28.1500, 32.2500, 36.3500, 40.4500, 44.5500, 48.6500, 52.7500,
-#                       56.1667, 58.9000, 61.6333])
-#         chord = np.array([3.542, 3.854, 4.167, 4.557, 4.652, 4.458, 4.249, 4.007, 3.748,
-#                           3.502, 3.256, 3.010, 2.764, 2.518, 2.313, 2.086, 1.419])
-#         theta = np.array([13.308, 13.308, 13.308, 13.308, 11.480, 10.162, 9.011, 7.795,
-#                           6.544, 5.361, 4.188, 3.125, 2.319, 1.526, 0.863, 0.370, 0.106])
-#         B = 3  # number of blades
-#
-#         # atmosphere
-#         rho = 1.225
-#         mu = 1.81206e-5
-#
-#         afinit = CCAirfoil.initFromAerodynFile  # just for shorthand
-#         basepath = path.join(path.dirname(path.realpath(__file__)), '5MW_AFFiles') + path.sep
-#
-#         # load all airfoils
-#         airfoil_types = [0]*8
-#         airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
-#         airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
-#         airfoil_types[2] = afinit(basepath + 'DU40_A17.dat')
-#         airfoil_types[3] = afinit(basepath + 'DU35_A17.dat')
-#         airfoil_types[4] = afinit(basepath + 'DU30_A17.dat')
-#         airfoil_types[5] = afinit(basepath + 'DU25_A17.dat')
-#         airfoil_types[6] = afinit(basepath + 'DU21_A17.dat')
-#         airfoil_types[7] = afinit(basepath + 'NACA64_A17.dat')
-#
-#         # place at appropriate radial stations
-#         af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
-#
-#         af = [0]*len(r)
-#         for i in range(len(r)):
-#             af[i] = airfoil_types[af_idx[i]]
-#
-#
-#         tilt = -5.0
-#         precone = 2.5
-#         yaw = 0.0
-#         shearExp = 0.2
-#         hubHt = 80.0
-#         nSector = 8
-#
-#         # set conditions
-#         Uinf = 10.0
-#         tsr = 7.55
-#         pitch = 0.0
-#         Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
-#         azimuth = 90.0
-#
-#         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
-#         n = len(r)
-#
-#         ## Load gradients
-#         loads = Problem()
-#         root = loads.root = LoadsGroup(n)
-#         loads.setup(check=False)
-#
-#         loads['Rhub'] = Rhub
-#         loads['Rtip'] = Rtip
-#         loads['r'] = r
-#         loads['chord'] = chord
-#         loads['theta'] = np.radians(theta)
-#         loads['rho'] = rho
-#         loads['mu'] = mu
-#         loads['tilt'] = np.radians(tilt)
-#         loads['precone'] = np.radians(precone)
-#         loads['yaw'] = np.radians(yaw)
-#         loads['shearExp'] = shearExp
-#         loads['hubHt'] = hubHt
-#         loads['Uinf'] = Uinf
-#         loads['Omega'] = Omega
-#         loads['pitch'] = np.radians(pitch)
-#         loads['azimuth'] = np.radians(azimuth)
-#         loads['af'] = af
-#         loads['bemoptions'] = bemoptions
-#
-#         loads.run()
-#         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
-#         loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp'])
-#         # loads_partials = loads.check_partial_derivatives(out_stream=loads_test_total_gradients)
-#
-#         ## Power Gradients
-#         ccblade = Problem()
-#         root = ccblade.root = CCBlade(nSector, n)
-#         ccblade.setup(check=False)
-#         ccblade['Rhub'] = Rhub
-#         ccblade['Rtip'] = Rtip
-#         ccblade['r'] = r
-#         ccblade['chord'] = chord
-#         ccblade['theta'] = np.radians(theta)
-#         ccblade['B'] = B
-#         ccblade['rho'] = rho
-#         ccblade['mu'] = mu
-#         ccblade['tilt'] = np.radians(tilt)
-#         ccblade['precone'] = np.radians(precone)
-#         ccblade['yaw'] = np.radians(yaw)
-#         ccblade['shearExp'] = shearExp
-#         ccblade['hubHt'] = hubHt
-#         ccblade['nSector'] = nSector
-#         ccblade['Uinf'] = Uinf
-#         ccblade['Omega'] = Omega
-#         ccblade['pitch'] = np.radians(pitch)
-#         ccblade['af'] = af
-#         ccblade['bemoptions'] = bemoptions
-#
-#         ccblade.run()
-#
-#         print "Generating gradients for Test 1. Please wait..."
-#         power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
-#         # power_gradients = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q'])
-#         # power_partial = ccblade.check_partial_derivatives(out_stream=power_test_total_gradients)
-#         print "Gradients generated for Test 1."
-#
-#         self.loads_gradients = loads_gradients
-#         # self.power_gradients = power_gradients
-#         self.n = len(r)
-#         self.npts = 1  # len(Uinf)
-#
-#     def test_dr1(self):
-#
-#         dNp_dr = self.loads_gradients['Np', 'r']['J_fwd']
-#         dTp_dr = self.loads_gradients['Tp', 'r']['J_fwd']
-#         dNp_dr_fd = self.loads_gradients['Np', 'r']['J_fd']
-#         dTp_dr_fd = self.loads_gradients['Tp', 'r']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dr_fd, dNp_dr, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dr_fd, dTp_dr, rtol=1e-4, atol=1e-8)
-#
-#
-#     def test_dr2(self):
-#
-#         dT_dr = self.power_gradients['T', 'r']['J_fwd']
-#         dQ_dr = self.power_gradients['Q', 'r']['J_fwd']
-#         dP_dr = self.power_gradients['P', 'r']['J_fwd']
-#         dT_dr_fd = self.power_gradients['T', 'r']['J_fd']
-#         dQ_dr_fd = self.power_gradients['Q', 'r']['J_fd']
-#         dP_dr_fd = self.power_gradients['P', 'r']['J_fd']
-#
-#
-#         np.testing.assert_allclose(dT_dr_fd, dT_dr, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dr_fd, dQ_dr, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dP_dr_fd, dP_dr, rtol=3e-4, atol=1e-8)
-#
-#
-#     def test_dr3(self):
-#
-#         dCT_dr = self.power_gradients['CT', 'r']['J_fwd']
-#         dCQ_dr = self.power_gradients['CQ', 'r']['J_fwd']
-#         dCP_dr = self.power_gradients['CP', 'r']['J_fwd']
-#         dCT_dr_fd = self.power_gradients['CT', 'r']['J_fd']
-#         dCQ_dr_fd = self.power_gradients['CQ', 'r']['J_fd']
-#         dCP_dr_fd = self.power_gradients['CP', 'r']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dr_fd, dCT_dr, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dr_fd, dCQ_dr, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dr_fd, dCP_dr, rtol=3e-4, atol=1e-8)
-#
-#
-#
-#     def test_dchord1(self):
-#
-#         dNp_dchord = self.loads_gradients['Np', 'chord']['J_fwd']
-#         dTp_dchord = self.loads_gradients['Tp', 'chord']['J_fwd']
-#         dNp_dchord_fd = self.loads_gradients['Np', 'chord']['J_fd']
-#         dTp_dchord_fd = self.loads_gradients['Tp', 'chord']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dchord_fd, dNp_dchord, rtol=1e-6, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dchord_fd, dTp_dchord, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dchord2(self):
-#
-#         dT_dchord = self.power_gradients['T', 'chord']['J_fwd']
-#         dQ_dchord = self.power_gradients['Q', 'chord']['J_fwd']
-#         dP_dchord = self.power_gradients['P', 'chord']['J_fwd']
-#         dT_dchord_fd = self.power_gradients['T', 'chord']['J_fd']
-#         dQ_dchord_fd = self.power_gradients['Q', 'chord']['J_fd']
-#         dP_dchord_fd = self.power_gradients['P', 'chord']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dchord_fd, dT_dchord, rtol=5e-6, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dchord_fd, dQ_dchord, rtol=7e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dchord_fd, dP_dchord, rtol=7e-5, atol=1e-8)
-#
-#     def test_dchord3(self):
-#
-#         dCT_dchord = self.power_gradients['CT', 'chord']['J_fwd']
-#         dCQ_dchord = self.power_gradients['CQ', 'chord']['J_fwd']
-#         dCP_dchord = self.power_gradients['CP', 'chord']['J_fwd']
-#         dCT_dchord_fd = self.power_gradients['CT', 'chord']['J_fd']
-#         dCQ_dchord_fd = self.power_gradients['CQ', 'chord']['J_fd']
-#         dCP_dchord_fd = self.power_gradients['CP', 'chord']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dchord_fd, dCT_dchord, rtol=5e-6, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dchord_fd, dCQ_dchord, rtol=7e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dchord_fd, dCP_dchord, rtol=7e-5, atol=1e-8)
-#
-#
-#
-#
-#     def test_dtheta1(self):
-#
-#         dNp_dtheta = self.loads_gradients['Np', 'theta']['J_fwd']
-#         dTp_dtheta = self.loads_gradients['Tp', 'theta']['J_fwd']
-#         dNp_dtheta_fd = self.loads_gradients['Np', 'theta']['J_fwd']
-#         dTp_dtheta_fd = self.loads_gradients['Tp', 'theta']['J_fwd']
-#
-#         np.testing.assert_allclose(dNp_dtheta_fd, dNp_dtheta, rtol=1e-6, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dtheta_fd, dTp_dtheta, rtol=1e-4, atol=1e-8)
-#
-#
-#     def test_dtheta2(self):
-#
-#         dT_dtheta = self.power_gradients['T', 'theta']['J_fwd']
-#         dQ_dtheta = self.power_gradients['Q', 'theta']['J_fwd']
-#         dP_dtheta = self.power_gradients['P', 'theta']['J_fwd']
-#         dT_dtheta_fd = self.power_gradients['T', 'theta']['J_fd']
-#         dQ_dtheta_fd = self.power_gradients['Q', 'theta']['J_fd']
-#         dP_dtheta_fd = self.power_gradients['P', 'theta']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dtheta_fd, dT_dtheta, rtol=7e-4, atol=1e-6) # TODO: rtol=7e-5, atol=1e-8
-#         np.testing.assert_allclose(dQ_dtheta_fd, dQ_dtheta, rtol=7e-4, atol=1e-6)
-#         np.testing.assert_allclose(dP_dtheta_fd, dP_dtheta, rtol=7e-4, atol=1e-6)
-#
-#
-#
-#     def test_dtheta3(self):
-#
-#         dCT_dtheta = self.power_gradients['CT', 'theta']['J_fwd']
-#         dCQ_dtheta = self.power_gradients['CQ', 'theta']['J_fwd']
-#         dCP_dtheta = self.power_gradients['CP', 'theta']['J_fwd']
-#         dCT_dtheta_fd = self.power_gradients['CT', 'theta']['J_fd']
-#         dCQ_dtheta_fd = self.power_gradients['CQ', 'theta']['J_fd']
-#         dCP_dtheta_fd = self.power_gradients['CP', 'theta']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dtheta_fd, dCT_dtheta, rtol=5e-6, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dtheta_fd, dCQ_dtheta, rtol=7e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dtheta_fd, dCP_dtheta, rtol=7e-5, atol=1e-8)
-#
-#
-#
-#     def test_dRhub1(self):
-#
-#         dNp_dRhub = self.loads_gradients['Np', 'Rhub']['J_fwd']
-#         dTp_dRhub = self.loads_gradients['Tp', 'Rhub']['J_fwd']
-#
-#         dNp_dRhub_fd = self.loads_gradients['Np', 'Rhub']['J_fd']
-#         dTp_dRhub_fd = self.loads_gradients['Tp', 'Rhub']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dRhub_fd, dNp_dRhub, rtol=1e-5, atol=1.5e-6) # TODO
-#         np.testing.assert_allclose(dTp_dRhub_fd, dTp_dRhub, rtol=1e-4, atol=1.5e-6)
-#
-#
-#     def test_dRhub2(self):
-#
-#         dT_dRhub = self.power_gradients['T', 'Rhub']['J_fwd']
-#         dQ_dRhub = self.power_gradients['Q', 'Rhub']['J_fwd']
-#         dP_dRhub = self.power_gradients['P', 'Rhub']['J_fwd']
-#
-#         dT_dRhub_fd = self.power_gradients['T', 'Rhub']['J_fd']
-#         dQ_dRhub_fd = self.power_gradients['Q', 'Rhub']['J_fd']
-#         dP_dRhub_fd = self.power_gradients['P', 'Rhub']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dRhub_fd, dT_dRhub, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dRhub_fd, dQ_dRhub, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dRhub_fd, dP_dRhub, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dRhub3(self):
-#
-#         dCT_dRhub = self.power_gradients['CT', 'Rhub']['J_fwd']
-#         dCQ_dRhub = self.power_gradients['CQ', 'Rhub']['J_fwd']
-#         dCP_dRhub = self.power_gradients['CP', 'Rhub']['J_fwd']
-#
-#         dCT_dRhub_fd = self.power_gradients['CT', 'Rhub']['J_fd']
-#         dCQ_dRhub_fd = self.power_gradients['CQ', 'Rhub']['J_fd']
-#         dCP_dRhub_fd = self.power_gradients['CP', 'Rhub']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dRhub_fd, dCT_dRhub, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dRhub_fd, dCQ_dRhub, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dRhub_fd, dCP_dRhub, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dRtip1(self):
-#
-#         dNp_dRtip = self.loads_gradients['Np', 'Rtip']['J_fwd']
-#         dTp_dRtip = self.loads_gradients['Tp', 'Rtip']['J_fwd']
-#
-#         dNp_dRtip_fd = self.loads_gradients['Np', 'Rtip']['J_fd']
-#         dTp_dRtip_fd = self.loads_gradients['Tp', 'Rtip']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dRtip_fd, dNp_dRtip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dRtip_fd, dTp_dRtip, rtol=1e-4, atol=1e-8)
-#
-#
-#     def test_dRtip2(self):
-#
-#         dT_dRtip = self.power_gradients['T', 'Rtip']['J_fwd']
-#         dQ_dRtip = self.power_gradients['Q', 'Rtip']['J_fwd']
-#         dP_dRtip = self.power_gradients['P', 'Rtip']['J_fwd']
-#
-#         dT_dRtip_fd = self.power_gradients['T', 'Rtip']['J_fd']
-#         dQ_dRtip_fd = self.power_gradients['Q', 'Rtip']['J_fd']
-#         dP_dRtip_fd = self.power_gradients['P', 'Rtip']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dRtip_fd, dT_dRtip, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dRtip_fd, dQ_dRtip, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dRtip_fd, dP_dRtip, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dRtip3(self):
-#
-#         dCT_dRtip = self.power_gradients['CT', 'Rtip']['J_fwd']
-#         dCQ_dRtip = self.power_gradients['CQ', 'Rtip']['J_fwd']
-#         dCP_dRtip = self.power_gradients['CP', 'Rtip']['J_fwd']
-#
-#         dCT_dRtip_fd = self.power_gradients['CT', 'Rtip']['J_fd']
-#         dCQ_dRtip_fd = self.power_gradients['CQ', 'Rtip']['J_fd']
-#         dCP_dRtip_fd = self.power_gradients['CP', 'Rtip']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dRtip_fd, dCT_dRtip, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dRtip_fd, dCQ_dRtip, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dRtip_fd, dCP_dRtip, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dprecone1(self):
-#
-#         dNp_dprecone = self.loads_gradients['Np', 'precone']['J_fwd']
-#         dTp_dprecone = self.loads_gradients['Tp', 'precone']['J_fwd']
-#
-#         dNp_dprecone_fd = self.loads_gradients['Np', 'precone']['J_fd']
-#         dTp_dprecone_fd = self.loads_gradients['Tp', 'precone']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dprecone_fd, dNp_dprecone, rtol=1e-5, atol=1e-7)
-#         np.testing.assert_allclose(dTp_dprecone_fd, dTp_dprecone, rtol=1e-5, atol=1e-7)
-#
-#
-#
-#     def test_dprecone2(self):
-#
-#         dT_dprecone = self.power_gradients['T', 'precone']['J_fwd']
-#         dQ_dprecone = self.power_gradients['Q', 'precone']['J_fwd']
-#         dP_dprecone = self.power_gradients['P', 'precone']['J_fwd']
-#
-#         dT_dprecone_fd = self.power_gradients['T', 'precone']['J_fd']
-#         dQ_dprecone_fd = self.power_gradients['Q', 'precone']['J_fd']
-#         dP_dprecone_fd = self.power_gradients['P', 'precone']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dprecone_fd, dT_dprecone, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dprecone_fd, dQ_dprecone, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dprecone_fd, dP_dprecone, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dprecone3(self):
-#
-#         dCT_dprecone = self.power_gradients['CT', 'precone']['J_fwd']
-#         dCQ_dprecone = self.power_gradients['CQ', 'precone']['J_fwd']
-#         dCP_dprecone = self.power_gradients['CP', 'precone']['J_fwd']
-#
-#         dCT_dprecone_fd = self.power_gradients['CT', 'precone']['J_fd']
-#         dCQ_dprecone_fd = self.power_gradients['CQ', 'precone']['J_fd']
-#         dCP_dprecone_fd = self.power_gradients['CP', 'precone']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dprecone_fd, dCT_dprecone, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dprecone_fd, dCQ_dprecone, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dprecone_fd, dCP_dprecone, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dtilt1(self):
-#
-#         dNp_dtilt = self.loads_gradients['Np', 'tilt']['J_fwd']
-#         dTp_dtilt = self.loads_gradients['Tp', 'tilt']['J_fwd']
-#
-#         dNp_dtilt_fd = self.loads_gradients['Np', 'tilt']['J_fd']
-#         dTp_dtilt_fd = self.loads_gradients['Tp', 'tilt']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dtilt_fd, dNp_dtilt, rtol=1e-6, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dtilt_fd, dTp_dtilt, rtol=1e-5, atol=1e-8)
-#
-#
-#     def test_dtilt2(self):
-#
-#         dT_dtilt = self.power_gradients['T', 'tilt']['J_fwd']
-#         dQ_dtilt = self.power_gradients['Q', 'tilt']['J_fwd']
-#         dP_dtilt = self.power_gradients['P', 'tilt']['J_fwd']
-#
-#         dT_dtilt_fd = self.power_gradients['T', 'tilt']['J_fd']
-#         dQ_dtilt_fd = self.power_gradients['Q', 'tilt']['J_fd']
-#         dP_dtilt_fd = self.power_gradients['P', 'tilt']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dtilt_fd, dT_dtilt, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dtilt_fd, dQ_dtilt, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dtilt_fd, dP_dtilt, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dtilt3(self):
-#
-#         dCT_dtilt = self.power_gradients['CT', 'tilt']['J_fwd']
-#         dCQ_dtilt = self.power_gradients['CQ', 'tilt']['J_fwd']
-#         dCP_dtilt = self.power_gradients['CP', 'tilt']['J_fwd']
-#
-#         dCT_dtilt_fd = self.power_gradients['CT', 'tilt']['J_fd']
-#         dCQ_dtilt_fd = self.power_gradients['CQ', 'tilt']['J_fd']
-#         dCP_dtilt_fd = self.power_gradients['CP', 'tilt']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dtilt_fd, dCT_dtilt, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dtilt_fd, dCQ_dtilt, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dtilt_fd, dCP_dtilt, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dhubht1(self):
-#
-#         dNp_dhubht = self.loads_gradients['Np', 'hubHt']['J_fwd']
-#         dTp_dhubht = self.loads_gradients['Tp', 'hubHt']['J_fwd']
-#
-#         dNp_dhubht_fd = self.loads_gradients['Np', 'hubHt']['J_fd']
-#         dTp_dhubht_fd = self.loads_gradients['Tp', 'hubHt']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dhubht_fd, dNp_dhubht, rtol=1e-4, atol=1e-6) # TODO rtol = 1e-5 atol=1e-8
-#         np.testing.assert_allclose(dTp_dhubht_fd, dTp_dhubht, rtol=1e-4, atol=1e-6)
-#
-#
-#     def test_dhubht2(self):
-#
-#         dT_dhubht = self.power_gradients['T', 'hubHt']['J_fwd']
-#         dQ_dhubht = self.power_gradients['Q', 'hubHt']['J_fwd']
-#         dP_dhubht = self.power_gradients['P', 'hubHt']['J_fwd']
-#
-#         dT_dhubht_fd = self.power_gradients['T', 'hubHt']['J_fd']
-#         dQ_dhubht_fd = self.power_gradients['Q', 'hubHt']['J_fd']
-#         dP_dhubht_fd = self.power_gradients['P', 'hubHt']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dhubht_fd, dT_dhubht, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dhubht_fd, dQ_dhubht, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dhubht_fd, dP_dhubht, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dhubht3(self):
-#
-#         dCT_dhubht = self.power_gradients['CT', 'hubHt']['J_fwd']
-#         dCQ_dhubht = self.power_gradients['CQ', 'hubHt']['J_fwd']
-#         dCP_dhubht = self.power_gradients['CP', 'hubHt']['J_fwd']
-#
-#         dCT_dhubht_fd = self.power_gradients['CT', 'hubHt']['J_fd']
-#         dCQ_dhubht_fd = self.power_gradients['CQ', 'hubHt']['J_fd']
-#         dCP_dhubht_fd = self.power_gradients['CP', 'hubHt']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dhubht_fd, dCT_dhubht, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dhubht_fd, dCQ_dhubht, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dhubht_fd, dCP_dhubht, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dyaw1(self):
-#
-#         dNp_dyaw = self.loads_gradients['Np', 'yaw']['J_fwd']
-#         dTp_dyaw = self.loads_gradients['Tp', 'yaw']['J_fwd']
-#
-#         dNp_dyaw_fd = self.loads_gradients['Np', 'yaw']['J_fd']
-#         dTp_dyaw_fd = self.loads_gradients['Tp', 'yaw']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dyaw_fd, dNp_dyaw, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dyaw_fd, dTp_dyaw, rtol=1e-5, atol=1e-8)
-#
-#
-#     def test_dyaw2(self):
-#
-#         dT_dyaw = self.power_gradients['T', 'yaw']['J_fwd']
-#         dQ_dyaw = self.power_gradients['Q', 'yaw']['J_fwd']
-#         dP_dyaw = self.power_gradients['P', 'yaw']['J_fwd']
-#
-#         dT_dyaw_fd = self.power_gradients['T', 'yaw']['J_fd']
-#         dQ_dyaw_fd = self.power_gradients['Q', 'yaw']['J_fd']
-#         dP_dyaw_fd = self.power_gradients['P', 'yaw']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dyaw_fd, dT_dyaw, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dyaw_fd, dQ_dyaw, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dyaw_fd, dP_dyaw, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dyaw3(self):
-#
-#         dCT_dyaw = self.power_gradients['CT', 'yaw']['J_fwd']
-#         dCQ_dyaw = self.power_gradients['CQ', 'yaw']['J_fwd']
-#         dCP_dyaw = self.power_gradients['CP', 'yaw']['J_fwd']
-#
-#         dCT_dyaw_fd = self.power_gradients['CT', 'yaw']['J_fd']
-#         dCQ_dyaw_fd = self.power_gradients['CQ', 'yaw']['J_fd']
-#         dCP_dyaw_fd = self.power_gradients['CP', 'yaw']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dyaw_fd, dCT_dyaw, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dyaw_fd, dCQ_dyaw, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dyaw_fd, dCP_dyaw, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dazimuth1(self):
-#
-#         dNp_dazimuth = self.loads_gradients['Np', 'azimuth']['J_fwd']
-#         dTp_dazimuth = self.loads_gradients['Tp', 'azimuth']['J_fwd']
-#
-#         dNp_dazimuth_fd = self.loads_gradients['Np', 'azimuth']['J_fd']
-#         dTp_dazimuth_fd = self.loads_gradients['Tp', 'azimuth']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dazimuth_fd, dNp_dazimuth, rtol=1e-5, atol=1e-6)
-#         np.testing.assert_allclose(dTp_dazimuth_fd, dTp_dazimuth, rtol=1e-5, atol=1e-6)
-#
-#
-#     def test_dUinf1(self):
-#
-#         dNp_dUinf = self.loads_gradients['Np', 'Uinf']['J_fwd']
-#         dTp_dUinf = self.loads_gradients['Tp', 'Uinf']['J_fwd']
-#
-#         dNp_dUinf_fd = self.loads_gradients['Np', 'Uinf']['J_fd']
-#         dTp_dUinf_fd = self.loads_gradients['Tp', 'Uinf']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dUinf_fd, dNp_dUinf, rtol=1e-5, atol=1e-6)
-#         np.testing.assert_allclose(dTp_dUinf_fd, dTp_dUinf, rtol=1e-5, atol=1e-6)
-#
-#
-#     def test_dUinf2(self):
-#
-#         dT_dUinf = self.power_gradients['T', 'Uinf']['J_fwd']
-#         dQ_dUinf = self.power_gradients['Q', 'Uinf']['J_fwd']
-#         dP_dUinf = self.power_gradients['P', 'Uinf']['J_fwd']
-#
-#         dT_dUinf_fd = self.power_gradients['T', 'Uinf']['J_fd']
-#         dQ_dUinf_fd = self.power_gradients['Q', 'Uinf']['J_fd']
-#         dP_dUinf_fd = self.power_gradients['P', 'Uinf']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dUinf_fd, dT_dUinf, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dUinf_fd, dQ_dUinf, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dUinf_fd, dP_dUinf, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dUinf3(self):
-#
-#         dCT_dUinf = self.power_gradients['CT', 'Uinf']['J_fwd']
-#         dCQ_dUinf = self.power_gradients['CQ', 'Uinf']['J_fwd']
-#         dCP_dUinf = self.power_gradients['CP', 'Uinf']['J_fwd']
-#
-#         dCT_dUinf_fd = self.power_gradients['CT', 'Uinf']['J_fd']
-#         dCQ_dUinf_fd = self.power_gradients['CQ', 'Uinf']['J_fd']
-#         dCP_dUinf_fd = self.power_gradients['CP', 'Uinf']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dUinf_fd, dCT_dUinf, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dUinf_fd, dCQ_dUinf, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dUinf_fd, dCP_dUinf, rtol=5e-5, atol=1e-8)
-#
-#
-#     def test_dOmega1(self):
-#
-#         dNp_dOmega = self.loads_gradients['Np', 'Omega']['J_fwd']
-#         dTp_dOmega = self.loads_gradients['Tp', 'Omega']['J_fwd']
-#
-#         dNp_dOmega_fd = self.loads_gradients['Np', 'Omega']['J_fd']
-#         dTp_dOmega_fd = self.loads_gradients['Tp', 'Omega']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dOmega_fd, dNp_dOmega, rtol=1e-5, atol=1e-6)
-#         np.testing.assert_allclose(dTp_dOmega_fd, dTp_dOmega, rtol=1e-5, atol=1e-6)
-#
-#
-#     def test_dOmega2(self):
-#
-#         dT_dOmega = self.power_gradients['T', 'Omega']['J_fwd']
-#         dQ_dOmega = self.power_gradients['Q', 'Omega']['J_fwd']
-#         dP_dOmega = self.power_gradients['P', 'Omega']['J_fwd']
-#
-#         dT_dOmega_fd = self.power_gradients['T', 'Omega']['J_fd']
-#         dQ_dOmega_fd = self.power_gradients['Q', 'Omega']['J_fd']
-#         dP_dOmega_fd = self.power_gradients['P', 'Omega']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dOmega_fd, dT_dOmega, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dOmega_fd, dQ_dOmega, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dOmega_fd, dP_dOmega, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dOmega3(self):
-#
-#         dCT_dOmega = self.power_gradients['CT', 'Omega']['J_fwd']
-#         dCQ_dOmega = self.power_gradients['CQ', 'Omega']['J_fwd']
-#         dCP_dOmega = self.power_gradients['CP', 'Omega']['J_fwd']
-#
-#         dCT_dOmega_fd = self.power_gradients['CT', 'Omega']['J_fd']
-#         dCQ_dOmega_fd = self.power_gradients['CQ', 'Omega']['J_fd']
-#         dCP_dOmega_fd = self.power_gradients['CP', 'Omega']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dOmega_fd, dCT_dOmega, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dOmega_fd, dCQ_dOmega, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dOmega_fd, dCP_dOmega, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dpitch1(self):
-#
-#         dNp_dpitch = self.loads_gradients['Np', 'pitch']['J_fwd']
-#         dTp_dpitch = self.loads_gradients['Tp', 'pitch']['J_fwd']
-#
-#         dNp_dpitch_fd = self.loads_gradients['Np', 'pitch']['J_fd']
-#         dTp_dpitch_fd = self.loads_gradients['Tp', 'pitch']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dpitch_fd, dNp_dpitch, rtol=5e-5, atol=1e-6)
-#         np.testing.assert_allclose(dTp_dpitch_fd, dTp_dpitch, rtol=5e-5, atol=1e-6)
-#
-#
-#     def test_dpitch2(self):
-#
-#         dT_dpitch = self.power_gradients['T', 'pitch']['J_fwd']
-#         dQ_dpitch = self.power_gradients['Q', 'pitch']['J_fwd']
-#         dP_dpitch = self.power_gradients['P', 'pitch']['J_fwd']
-#
-#         dT_dpitch_fd = self.power_gradients['T', 'pitch']['J_fd']
-#         dQ_dpitch_fd = self.power_gradients['Q', 'pitch']['J_fd']
-#         dP_dpitch_fd = self.power_gradients['P', 'pitch']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dpitch_fd, dT_dpitch, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dpitch_fd, dQ_dpitch, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dP_dpitch_fd, dP_dpitch, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dpitch3(self):
-#
-#         dCT_dpitch = self.power_gradients['CT', 'pitch']['J_fwd']
-#         dCQ_dpitch = self.power_gradients['CQ', 'pitch']['J_fwd']
-#         dCP_dpitch = self.power_gradients['CP', 'pitch']['J_fwd']
-#
-#         dCT_dpitch_fd = self.power_gradients['CT', 'pitch']['J_fd']
-#         dCQ_dpitch_fd = self.power_gradients['CQ', 'pitch']['J_fd']
-#         dCP_dpitch_fd = self.power_gradients['CP', 'pitch']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dpitch_fd, dCT_dpitch, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dpitch_fd, dCQ_dpitch, rtol=5e-5, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dpitch_fd, dCP_dpitch, rtol=5e-5, atol=1e-8)
-#
-#
-#
-#     def test_dprecurve1(self):
-#
-#         # precurve = np.linspace(1, 10, self.n)
-#         # precurveTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
-#         #
-#         # Np, Tp, dNp, dTp \
-#         #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-#
-#         dNp_dprecurve = self.loads_gradients['Np', 'precurve']['J_fwd']
-#         dTp_dprecurve = self.loads_gradients['Tp', 'precurve']['J_fwd']
-#
-#         dNp_dprecurve_fd = self.loads_gradients['Np', 'precurve']['J_fwd']
-#         dTp_dprecurve_fd = self.loads_gradients['Tp', 'precurve']['J_fwd']
-#
-#         np.testing.assert_allclose(dNp_dprecurve_fd, dNp_dprecurve, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dprecurve_fd, dTp_dprecurve, rtol=3e-4, atol=1e-8)
-#
-#
-#     def test_dprecurve2(self):
-#
-#         # precurve = np.linspace(1, 10, self.n)
-#         # precurveTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
-#         #
-#         # P, T, Q, dP, dT, dQ \
-#         #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=False)
-#
-#         dT_dprecurve = self.power_gradients['T', 'precurve']['J_fwd']
-#         dQ_dprecurve = self.power_gradients['Q', 'precurve']['J_fwd']
-#         dP_dprecurve = self.power_gradients['P', 'precurve']['J_fwd']
-#
-#         dT_dprecurve_fd = self.power_gradients['T', 'precurve']['J_fd']
-#         dQ_dprecurve_fd = self.power_gradients['Q', 'precurve']['J_fd']
-#         dP_dprecurve_fd = self.power_gradients['P', 'precurve']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dprecurve_fd, dT_dprecurve, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dprecurve_fd, dQ_dprecurve, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dP_dprecurve_fd, dP_dprecurve, rtol=3e-4, atol=1e-8)
-#
-#
-#     def test_dprecurve3(self):
-#
-#         # precurve = np.linspace(1, 10, self.n)
-#         # precurveTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
-#         #
-#         # CP, CT, CQ, dCP, dCT, dCQ \
-#         #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=True)
-#
-#         dCT_dprecurve = self.power_gradients['CT', 'precurve']['J_fwd']
-#         dCQ_dprecurve = self.power_gradients['CQ', 'precurve']['J_fwd']
-#         dCP_dprecurve = self.power_gradients['CP', 'precurve']['J_fwd']
-#
-#
-#         dCT_dprecurve_fd = self.power_gradients['CT', 'precurve']['J_fd']
-#         dCQ_dprecurve_fd = self.power_gradients['CQ', 'precurve']['J_fd']
-#         dCP_dprecurve_fd = self.power_gradients['CP', 'precurve']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dprecurve_fd, dCT_dprecurve, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dprecurve_fd, dCQ_dprecurve, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dprecurve_fd, dCP_dprecurve, rtol=3e-4, atol=1e-8)
-#
-#
-#     def test_dpresweep1(self):
-#
-#         # presweep = np.linspace(1, 10, self.n)
-#         # presweepTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-#         #
-#         # Np, Tp, dNp, dTp \
-#         #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-#
-#         dNp_dpresweep = self.loads_gradients['Np', 'presweep']['J_fwd']
-#         dTp_dpresweep = self.loads_gradients['Tp', 'presweep']['J_fwd']
-#
-#         dNp_dpresweep_fd = self.loads_gradients['Np', 'presweep']['J_fwd']
-#         dTp_dpresweep_fd = self.loads_gradients['Tp', 'presweep']['J_fwd']
-#
-#         np.testing.assert_allclose(dNp_dpresweep_fd, dNp_dpresweep, rtol=1e-5, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dpresweep_fd, dTp_dpresweep, rtol=1e-5, atol=1e-8)
-#
-#
-#     def test_dpresweep2(self):
-#
-#         # presweep = np.linspace(1, 10, self.n)
-#         # presweepTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-#         #
-#         # P, T, Q, dP, dT, dQ \
-#         #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=False)
-#
-#         dT_dpresweep = self.power_gradients['T', 'presweep']['J_fwd']
-#         dQ_dpresweep = self.power_gradients['Q', 'presweep']['J_fwd']
-#         dP_dpresweep = self.power_gradients['P', 'presweep']['J_fwd']
-#
-#
-#         dT_dpresweep_fd = self.power_gradients['T', 'presweep']['J_fd']
-#         dQ_dpresweep_fd = self.power_gradients['Q', 'presweep']['J_fd']
-#         dP_dpresweep_fd = self.power_gradients['P', 'presweep']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dpresweep_fd, dT_dpresweep, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dpresweep_fd, dQ_dpresweep, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dP_dpresweep_fd, dP_dpresweep, rtol=3e-4, atol=1e-8)
-#
-#
-#
-#
-#     def test_dpresweep3(self):
-#
-#         # presweep = np.linspace(1, 10, self.n)
-#         # presweepTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-#         #
-#         # CP, CT, CQ, dCP, dCT, dCQ \
-#         #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=True)
-#
-#         dCT_dpresweep = self.power_gradients['CT', 'presweep']['J_fwd']
-#         dCQ_dpresweep = self.power_gradients['CQ', 'presweep']['J_fwd']
-#         dCP_dpresweep = self.power_gradients['CP', 'presweep']['J_fwd']
-#
-#         dCT_dpresweep_fd = self.power_gradients['CT', 'presweep']['J_fd']
-#         dCQ_dpresweep_fd = self.power_gradients['CQ', 'presweep']['J_fd']
-#         dCP_dpresweep_fd = self.power_gradients['CP', 'presweep']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dpresweep_fd, dCT_dpresweep, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dpresweep_fd, dCQ_dpresweep, rtol=3e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dpresweep_fd, dCP_dpresweep, rtol=3e-4, atol=1e-8)
-#
-#
-#
-#     def test_dprecurveTip1(self):
-#
-#         # precurve = np.linspace(1, 10, self.n)
-#         # precurveTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
-#         #
-#         # Np, Tp, dNp, dTp \
-#         #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-#
-#         dNp_dprecurveTip_fd = self.loads_gradients['Np', 'precurveTip']['J_fd']
-#         dTp_dprecurveTip_fd = self.loads_gradients['Tp', 'precurveTip']['J_fd']
-#
-#
-#         np.testing.assert_allclose(dNp_dprecurveTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dprecurveTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-#
-#
-#     def test_dprecurveTip2(self):
-#
-#         # precurve = np.linspace(1, 10, self.n)
-#         # precurveTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
-#         #
-#         # P, T, Q, dP, dT, dQ \
-#         #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=False)
-#
-#         dT_dprecurveTip = self.power_gradients['T', 'precurveTip']['J_fwd']
-#         dQ_dprecurveTip = self.power_gradients['Q', 'precurveTip']['J_fwd']
-#         dP_dprecurveTip = self.power_gradients['P', 'precurveTip']['J_fwd']
-#
-#         dT_dprecurveTip_fd = self.power_gradients['T', 'precurveTip']['J_fd']
-#         dQ_dprecurveTip_fd = self.power_gradients['Q', 'precurveTip']['J_fd']
-#         dP_dprecurveTip_fd = self.power_gradients['P', 'precurveTip']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dprecurveTip_fd, dT_dprecurveTip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dprecurveTip_fd, dQ_dprecurveTip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dP_dprecurveTip_fd, dP_dprecurveTip, rtol=1e-4, atol=1e-8)
-#
-#
-#
-#     def test_dprecurveTip3(self):
-#
-#         # precurve = np.linspace(1, 10, self.n)
-#         # precurveTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
-#         #
-#         # CP, CT, CQ, dCP, dCT, dCQ \
-#         #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=True)
-#
-#         dCT_dprecurveTip = self.power_gradients['CT', 'precurveTip']['J_fwd']
-#         dCQ_dprecurveTip = self.power_gradients['CQ', 'precurveTip']['J_fwd']
-#         dCP_dprecurveTip = self.power_gradients['CP', 'precurveTip']['J_fwd']
-#
-#         dCT_dprecurveTip_fd = self.power_gradients['CT', 'precurveTip']['J_fd']
-#         dCQ_dprecurveTip_fd = self.power_gradients['CQ', 'precurveTip']['J_fd']
-#         dCP_dprecurveTip_fd = self.power_gradients['CP', 'precurveTip']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dprecurveTip_fd, dCT_dprecurveTip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dprecurveTip_fd, dCQ_dprecurveTip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dprecurveTip_fd, dCP_dprecurveTip, rtol=1e-4, atol=1e-8)
-#
-#
-#     def test_dpresweepTip1(self):
-#
-#         # presweep = np.linspace(1, 10, self.n)
-#         # presweepTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-#         #
-#         # Np, Tp, dNp, dTp \
-#         #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-#
-#         dNp_dpresweepTip_fd = self.loads_gradients['Np', 'presweepTip']['J_fd']
-#         dTp_dpresweepTip_fd = self.loads_gradients['Tp', 'presweepTip']['J_fd']
-#
-#         np.testing.assert_allclose(dNp_dpresweepTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dTp_dpresweepTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-#
-#
-#     def test_dpresweepTip2(self):
-#
-#         # presweep = np.linspace(1, 10, self.n)
-#         # presweepTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-#         #
-#         # P, T, Q, dP, dT, dQ \
-#         #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=False)
-#
-#         dT_dpresweepTip = self.power_gradients['T', 'presweepTip']['J_fwd']
-#         dQ_dpresweepTip = self.power_gradients['Q', 'presweepTip']['J_fwd']
-#         dP_dpresweepTip = self.power_gradients['P', 'presweepTip']['J_fwd']
-#
-#         dT_dpresweepTip_fd = self.power_gradients['T', 'presweepTip']['J_fd']
-#         dQ_dpresweepTip_fd = self.power_gradients['Q', 'presweepTip']['J_fd']
-#         dP_dpresweepTip_fd = self.power_gradients['P', 'presweepTip']['J_fd']
-#
-#         np.testing.assert_allclose(dT_dpresweepTip_fd, dT_dpresweepTip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dQ_dpresweepTip_fd, dQ_dpresweepTip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dP_dpresweepTip_fd, dP_dpresweepTip, rtol=1e-4, atol=1e-8)
-#
-#
-#
-#     def test_dpresweepTip3(self):
-#
-#         # presweep = np.linspace(1, 10, self.n)
-#         # presweepTip = 10.1
-#         # precone = 0.0
-#         # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-#         #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-#         #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-#         #
-#         # CP, CT, CQ, dCP, dCT, dCQ \
-#         #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=True)
-#
-#         dCT_dpresweepTip = self.power_gradients['CT', 'presweepTip']['J_fwd']
-#         dCQ_dpresweepTip = self.power_gradients['CQ', 'presweepTip']['J_fwd']
-#         dCP_dpresweepTip = self.power_gradients['CP', 'presweepTip']['J_fwd']
-#
-#         dCT_dpresweepTip_fd = self.power_gradients['CT', 'presweepTip']['J_fd']
-#         dCQ_dpresweepTip_fd = self.power_gradients['CQ', 'presweepTip']['J_fd']
-#         dCP_dpresweepTip_fd = self.power_gradients['CP', 'presweepTip']['J_fd']
-#
-#         np.testing.assert_allclose(dCT_dpresweepTip_fd, dCT_dpresweepTip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCQ_dpresweepTip_fd, dCQ_dpresweepTip, rtol=1e-4, atol=1e-8)
-#         np.testing.assert_allclose(dCP_dpresweepTip_fd, dCP_dpresweepTip, rtol=1e-4, atol=1e-8)
+class TestGradientsClass(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+       pass
+
+
+class TestGradientsPower_Loads(TestGradientsClass):
+
+    @classmethod
+    def setUpClass(self):
+        super(TestGradientsPower_Loads, self).setUpClass()
+        # geometry
+        Rhub = 1.5
+        Rtip = 63.0
+
+        r = np.array([2.8667, 5.6000, 8.3333, 11.7500, 15.8500, 19.9500, 24.0500,
+                      28.1500, 32.2500, 36.3500, 40.4500, 44.5500, 48.6500, 52.7500,
+                      56.1667, 58.9000, 61.6333])
+        chord = np.array([3.542, 3.854, 4.167, 4.557, 4.652, 4.458, 4.249, 4.007, 3.748,
+                          3.502, 3.256, 3.010, 2.764, 2.518, 2.313, 2.086, 1.419])
+        theta = np.array([13.308, 13.308, 13.308, 13.308, 11.480, 10.162, 9.011, 7.795,
+                          6.544, 5.361, 4.188, 3.125, 2.319, 1.526, 0.863, 0.370, 0.106])
+        B = 3  # number of blades
+
+        # atmosphere
+        rho = 1.225
+        mu = 1.81206e-5
+
+        afinit = CCAirfoil.initFromAerodynFile  # just for shorthand
+        basepath = path.join(path.dirname(path.realpath(__file__)), '5MW_AFFiles') + path.sep
+
+        # load all airfoils
+        airfoil_types = [0]*8
+        airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+        airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+        airfoil_types[2] = afinit(basepath + 'DU40_A17.dat')
+        airfoil_types[3] = afinit(basepath + 'DU35_A17.dat')
+        airfoil_types[4] = afinit(basepath + 'DU30_A17.dat')
+        airfoil_types[5] = afinit(basepath + 'DU25_A17.dat')
+        airfoil_types[6] = afinit(basepath + 'DU21_A17.dat')
+        airfoil_types[7] = afinit(basepath + 'NACA64_A17.dat')
+
+        # place at appropriate radial stations
+        af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
+
+        af = [0]*len(r)
+        for i in range(len(r)):
+            af[i] = airfoil_types[af_idx[i]]
+
+
+        tilt = -5.0
+        precone = 2.5
+        yaw = 0.0
+        shearExp = 0.2
+        hubHt = 80.0
+        nSector = 8
+
+        # set conditions
+        Uinf = 10.0
+        tsr = 7.55
+        pitch = 0.0
+        Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
+        azimuth = 90.0
+
+        bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
+        n = len(r)
+
+        ## Load gradients
+        loads = Problem()
+        root = loads.root = LoadsGroup(n)
+        loads.setup(check=False)
+
+        loads['Rhub'] = Rhub
+        loads['Rtip'] = Rtip
+        loads['r'] = r
+        loads['chord'] = chord
+        loads['theta'] = np.radians(theta)
+        loads['rho'] = rho
+        loads['mu'] = mu
+        loads['tilt'] = np.radians(tilt)
+        loads['precone'] = np.radians(precone)
+        loads['yaw'] = np.radians(yaw)
+        loads['shearExp'] = shearExp
+        loads['hubHt'] = hubHt
+        loads['Uinf'] = Uinf
+        loads['Omega'] = Omega
+        loads['pitch'] = np.radians(pitch)
+        loads['azimuth'] = np.radians(azimuth)
+        loads['af'] = af
+        loads['bemoptions'] = bemoptions
+
+        loads.run()
+
+        print "Generating gradients for Test 1. Please wait..."
+        self.loads_gradients = check_gradient_total(loads, unknown_list=['Np', 'Tp'])
+
+
+        ## Power Gradients
+        ccblade_ = Problem()
+        root = ccblade_.root = CCBlade(nSector, n)
+        ccblade_.setup(check=False)
+        ccblade_['Rhub'] = Rhub
+        ccblade_['Rtip'] = Rtip
+        ccblade_['r'] = r
+        ccblade_['chord'] = chord
+        ccblade_['theta'] = np.radians(theta)
+        ccblade_['B'] = B
+        ccblade_['rho'] = rho
+        ccblade_['mu'] = mu
+        ccblade_['tilt'] = np.radians(tilt)
+        ccblade_['precone'] = np.radians(precone)
+        ccblade_['yaw'] = np.radians(yaw)
+        ccblade_['shearExp'] = shearExp
+        ccblade_['hubHt'] = hubHt
+        ccblade_['nSector'] = nSector
+        ccblade_['Uinf'] = Uinf
+        ccblade_['Omega'] = Omega
+        ccblade_['pitch'] = np.radians(pitch)
+        ccblade_['af'] = af
+        ccblade_['bemoptions'] = bemoptions
+
+        ccblade_.run()
+
+        self.power_gradients = check_gradient_total(ccblade_, unknown_list=['CP', 'CT', 'CQ', 'P', 'Q', 'T'])
+        self.n = len(r)
+        self.npts = 1  # len(Uinf)
+
+        rotor = ccblade.CCBlade(r, chord, theta, af, Rhub, Rtip,
+            B, rho, mu, precone, tilt, yaw, shearExp,
+            hubHt, nSector, derivatives=True)
+
+        Np, Tp, self.dNp, self.dTp \
+            = rotor.distributedAeroLoads(Uinf, Omega, pitch, azimuth)
+
+        P, T, Q, self.dP, self.dT, self.dQ \
+            = rotor.evaluate([Uinf], [Omega], [pitch], coefficient=False)
+
+        CP, CT, CQ, self.dCP, self.dCT, self.dCQ \
+            = rotor.evaluate([Uinf], [Omega], [pitch], coefficient=True)
+
+
+
+    def test_dr1(self):
+
+        dNp_dr = self.loads_gradients['Np', 'r']
+        dTp_dr = self.loads_gradients['Tp', 'r']
+        dNp_dr_abs = self.dNp['r']
+        dTp_dr_abs = self.dTp['r']
+
+        np.testing.assert_allclose(dNp_dr_abs, dNp_dr, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dTp_dr_abs, dTp_dr, rtol=1e-4, atol=1e-8)
+
+
+    def test_dr2(self):
+
+        dT_dr = self.power_gradients['T', 'r']
+        dQ_dr = self.power_gradients['Q', 'r']
+        dP_dr = self.power_gradients['P', 'r']
+        dT_dr_abs = self.dT['r']
+        dQ_dr_abs = self.dQ['r']
+        dP_dr_abs = self.dP['r']
+
+
+        np.testing.assert_allclose(dT_dr_abs, dT_dr, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dr_abs, dQ_dr, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dP_dr_abs, dP_dr, rtol=3e-4, atol=1e-8)
+
+
+    def test_dr3(self):
+
+        dCT_dr = self.power_gradients['CT', 'r']
+        dCQ_dr = self.power_gradients['CQ', 'r']
+        dCP_dr = self.power_gradients['CP', 'r']
+        dCT_dr_abs = self.dCT['r']
+        dCQ_dr_abs = self.dCQ['r']
+        dCP_dr_abs = self.dCP['r']
+
+        np.testing.assert_allclose(dCT_dr_abs, dCT_dr, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dr_abs, dCQ_dr, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dCP_dr_abs, dCP_dr, rtol=3e-4, atol=1e-8)
+
+
+
+    def test_dchord1(self):
+
+        dNp_dchord = self.loads_gradients['Np', 'chord']
+        dTp_dchord = self.loads_gradients['Tp', 'chord']
+        dNp_dchord_abs = self.dNp['chord']
+        dTp_dchord_abs = self.dTp['chord']
+
+        np.testing.assert_allclose(dNp_dchord_abs, dNp_dchord, rtol=1e-6, atol=1e-8)
+        np.testing.assert_allclose(dTp_dchord_abs, dTp_dchord, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dchord2(self):
+
+        dT_dchord = self.power_gradients['T', 'chord']
+        dQ_dchord = self.power_gradients['Q', 'chord']
+        dP_dchord = self.power_gradients['P', 'chord']
+        dT_dchord_abs = self.dT['chord']
+        dQ_dchord_abs = self.dQ['chord']
+        dP_dchord_abs = self.dP['chord']
+
+        np.testing.assert_allclose(dT_dchord_abs, dT_dchord, rtol=5e-6, atol=1e-8)
+        np.testing.assert_allclose(dQ_dchord_abs, dQ_dchord, rtol=7e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dchord_abs, dP_dchord, rtol=7e-5, atol=1e-8)
+
+    def test_dchord3(self):
+
+        dCT_dchord = self.power_gradients['CT', 'chord']
+        dCQ_dchord = self.power_gradients['CQ', 'chord']
+        dCP_dchord = self.power_gradients['CP', 'chord']
+        dCT_dchord_abs = self.dCT['chord']
+        dCQ_dchord_abs = self.dCQ['chord']
+        dCP_dchord_abs = self.dCP['chord']
+
+        np.testing.assert_allclose(dCT_dchord_abs, dCT_dchord, rtol=5e-6, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dchord_abs, dCQ_dchord, rtol=7e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dchord_abs, dCP_dchord, rtol=7e-5, atol=1e-8)
+
+
+
+
+    def test_dtheta1(self):
+
+        dNp_dtheta = self.loads_gradients['Np', 'theta']
+        dTp_dtheta = self.loads_gradients['Tp', 'theta']
+        dNp_dtheta_abs = self.dNp['theta']
+        dTp_dtheta_abs = self.dTp['theta']
+
+        np.testing.assert_allclose(dNp_dtheta_abs, dNp_dtheta, rtol=1e-6, atol=1e-8)
+        np.testing.assert_allclose(dTp_dtheta_abs, dTp_dtheta, rtol=1e-4, atol=1e-8)
+
+
+    def test_dtheta2(self):
+
+        dT_dtheta = self.power_gradients['T', 'theta']
+        dQ_dtheta = self.power_gradients['Q', 'theta']
+        dP_dtheta = self.power_gradients['P', 'theta']
+        dT_dtheta_abs = self.dT['theta']
+        dQ_dtheta_abs = self.dQ['theta']
+        dP_dtheta_abs = self.dP['theta']
+
+        np.testing.assert_allclose(dT_dtheta_abs, dT_dtheta, rtol=7e-4, atol=1e-6) # TODO: rtol=7e-5, atol=1e-8
+        np.testing.assert_allclose(dQ_dtheta_abs, dQ_dtheta, rtol=7e-4, atol=1e-6)
+        np.testing.assert_allclose(dP_dtheta_abs, dP_dtheta, rtol=7e-4, atol=1e-6)
+
+
+
+    def test_dtheta3(self):
+
+        dCT_dtheta = self.power_gradients['CT', 'theta']
+        dCQ_dtheta = self.power_gradients['CQ', 'theta']
+        dCP_dtheta = self.power_gradients['CP', 'theta']
+        dCT_dtheta_abs = self.dCT['theta']
+        dCQ_dtheta_abs = self.dCQ['theta']
+        dCP_dtheta_abs = self.dCP['theta']
+
+        np.testing.assert_allclose(dCT_dtheta_abs, dCT_dtheta, rtol=5e-6, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dtheta_abs, dCQ_dtheta, rtol=7e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dtheta_abs, dCP_dtheta, rtol=7e-5, atol=1e-8)
+
+
+
+    def test_dRhub1(self):
+
+        dNp_dRhub = self.loads_gradients['Np', 'Rhub']
+        dTp_dRhub = self.loads_gradients['Tp', 'Rhub']
+
+        dNp_dRhub_abs = self.dNp['Rhub']
+        dTp_dRhub_abs = self.dTp['Rhub']
+
+        np.testing.assert_allclose(dNp_dRhub_abs, dNp_dRhub, rtol=1e-5, atol=1.5e-6) # TODO
+        np.testing.assert_allclose(dTp_dRhub_abs, dTp_dRhub, rtol=1e-4, atol=1.5e-6)
+
+
+    def test_dRhub2(self):
+
+        dT_dRhub = self.power_gradients['T', 'Rhub']
+        dQ_dRhub = self.power_gradients['Q', 'Rhub']
+        dP_dRhub = self.power_gradients['P', 'Rhub']
+
+        dT_dRhub_abs = self.dT['Rhub']
+        dQ_dRhub_abs = self.dQ['Rhub']
+        dP_dRhub_abs = self.dP['Rhub']
+
+        np.testing.assert_allclose(dT_dRhub_abs, dT_dRhub, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dRhub_abs, dQ_dRhub, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dRhub_abs, dP_dRhub, rtol=5e-5, atol=1e-8)
+
+
+    def test_dRhub3(self):
+
+        dCT_dRhub = self.power_gradients['CT', 'Rhub']
+        dCQ_dRhub = self.power_gradients['CQ', 'Rhub']
+        dCP_dRhub = self.power_gradients['CP', 'Rhub']
+
+        dCT_dRhub_abs = self.dCT['Rhub']
+        dCQ_dRhub_abs = self.dCQ['Rhub']
+        dCP_dRhub_abs = self.dCP['Rhub']
+
+        np.testing.assert_allclose(dCT_dRhub_abs, dCT_dRhub, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dRhub_abs, dCQ_dRhub, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dRhub_abs, dCP_dRhub, rtol=5e-5, atol=1e-8)
+
+
+    def test_dRtip1(self):
+
+        dNp_dRtip = self.loads_gradients['Np', 'Rtip']
+        dTp_dRtip = self.loads_gradients['Tp', 'Rtip']
+
+        dNp_dRtip_abs = self.dNp['Rtip']
+        dTp_dRtip_abs = self.dTp['Rtip']
+
+        np.testing.assert_allclose(dNp_dRtip_abs, dNp_dRtip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dTp_dRtip_abs, dTp_dRtip, rtol=1e-4, atol=1e-8)
+
+
+    def test_dRtip2(self):
+
+        dT_dRtip = self.power_gradients['T', 'Rtip']
+        dQ_dRtip = self.power_gradients['Q', 'Rtip']
+        dP_dRtip = self.power_gradients['P', 'Rtip']
+
+        dT_dRtip_abs = self.dT['Rtip']
+        dQ_dRtip_abs = self.dQ['Rtip']
+        dP_dRtip_abs = self.dP['Rtip']
+
+        np.testing.assert_allclose(dT_dRtip_abs, dT_dRtip, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dRtip_abs, dQ_dRtip, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dRtip_abs, dP_dRtip, rtol=5e-5, atol=1e-8)
+
+
+    def test_dRtip3(self):
+
+        dCT_dRtip = self.power_gradients['CT', 'Rtip']
+        dCQ_dRtip = self.power_gradients['CQ', 'Rtip']
+        dCP_dRtip = self.power_gradients['CP', 'Rtip']
+
+        dCT_dRtip_abs = self.dCT['Rtip']
+        dCQ_dRtip_abs = self.dCQ['Rtip']
+        dCP_dRtip_abs = self.dCP['Rtip']
+
+        np.testing.assert_allclose(dCT_dRtip_abs, dCT_dRtip, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dRtip_abs, dCQ_dRtip, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dRtip_abs, dCP_dRtip, rtol=5e-5, atol=1e-8)
+
+
+    def test_dprecone1(self):
+
+        dNp_dprecone = self.loads_gradients['Np', 'precone']
+        dTp_dprecone = self.loads_gradients['Tp', 'precone']
+
+        dNp_dprecone_abs = self.dNp['precone']
+        dTp_dprecone_abs = self.dTp['precone']
+
+        np.testing.assert_allclose(dNp_dprecone_abs, dNp_dprecone, rtol=1e-5, atol=1e-7)
+        np.testing.assert_allclose(dTp_dprecone_abs, dTp_dprecone, rtol=1e-5, atol=1e-7)
+
+
+
+    def test_dprecone2(self):
+
+        dT_dprecone = self.power_gradients['T', 'precone']
+        dQ_dprecone = self.power_gradients['Q', 'precone']
+        dP_dprecone = self.power_gradients['P', 'precone']
+
+        dT_dprecone_abs = self.dT['precone']
+        dQ_dprecone_abs = self.dQ['precone']
+        dP_dprecone_abs = self.dP['precone']
+
+        np.testing.assert_allclose(dT_dprecone_abs, dT_dprecone, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dprecone_abs, dQ_dprecone, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dprecone_abs, dP_dprecone, rtol=5e-5, atol=1e-8)
+
+
+    def test_dprecone3(self):
+
+        dCT_dprecone = self.power_gradients['CT', 'precone']
+        dCQ_dprecone = self.power_gradients['CQ', 'precone']
+        dCP_dprecone = self.power_gradients['CP', 'precone']
+
+        dCT_dprecone_abs = self.dCT['precone']
+        dCQ_dprecone_abs = self.dCQ['precone']
+        dCP_dprecone_abs = self.dCP['precone']
+
+        np.testing.assert_allclose(dCT_dprecone_abs, dCT_dprecone, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dprecone_abs, dCQ_dprecone, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dprecone_abs, dCP_dprecone, rtol=5e-5, atol=1e-8)
+
+
+    def test_dtilt1(self):
+
+        dNp_dtilt = self.loads_gradients['Np', 'tilt']
+        dTp_dtilt = self.loads_gradients['Tp', 'tilt']
+
+        dNp_dtilt_abs = self.dNp['tilt']
+        dTp_dtilt_abs = self.dTp['tilt']
+
+        np.testing.assert_allclose(dNp_dtilt_abs, dNp_dtilt, rtol=1e-6, atol=1e-8)
+        np.testing.assert_allclose(dTp_dtilt_abs, dTp_dtilt, rtol=1e-5, atol=1e-8)
+
+
+    def test_dtilt2(self):
+
+        dT_dtilt = self.power_gradients['T', 'tilt']
+        dQ_dtilt = self.power_gradients['Q', 'tilt']
+        dP_dtilt = self.power_gradients['P', 'tilt']
+
+        dT_dtilt_abs = self.dT['tilt']
+        dQ_dtilt_abs = self.dQ['tilt']
+        dP_dtilt_abs = self.dP['tilt']
+
+        np.testing.assert_allclose(dT_dtilt_abs, dT_dtilt, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dtilt_abs, dQ_dtilt, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dtilt_abs, dP_dtilt, rtol=5e-5, atol=1e-8)
+
+
+    def test_dtilt3(self):
+
+        dCT_dtilt = self.power_gradients['CT', 'tilt']
+        dCQ_dtilt = self.power_gradients['CQ', 'tilt']
+        dCP_dtilt = self.power_gradients['CP', 'tilt']
+
+        dCT_dtilt_abs = self.dCT['tilt']
+        dCQ_dtilt_abs = self.dCQ['tilt']
+        dCP_dtilt_abs = self.dCP['tilt']
+
+        np.testing.assert_allclose(dCT_dtilt_abs, dCT_dtilt, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dtilt_abs, dCQ_dtilt, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dtilt_abs, dCP_dtilt, rtol=5e-5, atol=1e-8)
+
+
+    def test_dhubht1(self):
+
+        dNp_dhubht = self.loads_gradients['Np', 'hubHt']
+        dTp_dhubht = self.loads_gradients['Tp', 'hubHt']
+
+        dNp_dhubht_abs = self.dNp['hubHt']
+        dTp_dhubht_abs = self.dTp['hubHt']
+
+        np.testing.assert_allclose(dNp_dhubht_abs, dNp_dhubht, rtol=1e-4, atol=1e-6) # TODO rtol = 1e-5 atol=1e-8
+        np.testing.assert_allclose(dTp_dhubht_abs, dTp_dhubht, rtol=1e-4, atol=1e-6)
+
+
+    def test_dhubht2(self):
+
+        dT_dhubht = self.power_gradients['T', 'hubHt']
+        dQ_dhubht = self.power_gradients['Q', 'hubHt']
+        dP_dhubht = self.power_gradients['P', 'hubHt']
+
+        dT_dhubht_abs = self.dT['hubHt']
+        dQ_dhubht_abs = self.dQ['hubHt']
+        dP_dhubht_abs = self.dP['hubHt']
+
+        np.testing.assert_allclose(dT_dhubht_abs, dT_dhubht, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dhubht_abs, dQ_dhubht, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dhubht_abs, dP_dhubht, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dhubht3(self):
+
+        dCT_dhubht = self.power_gradients['CT', 'hubHt']
+        dCQ_dhubht = self.power_gradients['CQ', 'hubHt']
+        dCP_dhubht = self.power_gradients['CP', 'hubHt']
+
+        dCT_dhubht_abs = self.dCT['hubHt']
+        dCQ_dhubht_abs = self.dCQ['hubHt']
+        dCP_dhubht_abs = self.dCP['hubHt']
+
+        np.testing.assert_allclose(dCT_dhubht_abs, dCT_dhubht, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dhubht_abs, dCQ_dhubht, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dhubht_abs, dCP_dhubht, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dyaw1(self):
+
+        dNp_dyaw = self.loads_gradients['Np', 'yaw']
+        dTp_dyaw = self.loads_gradients['Tp', 'yaw']
+
+        dNp_dyaw_abs = self.dNp['yaw']
+        dTp_dyaw_abs = self.dTp['yaw']
+
+        np.testing.assert_allclose(dNp_dyaw_abs, dNp_dyaw, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dTp_dyaw_abs, dTp_dyaw, rtol=1e-5, atol=1e-8)
+
+
+    def test_dyaw2(self):
+
+        dT_dyaw = self.power_gradients['T', 'yaw']
+        dQ_dyaw = self.power_gradients['Q', 'yaw']
+        dP_dyaw = self.power_gradients['P', 'yaw']
+
+        dT_dyaw_abs = self.dT['yaw']
+        dQ_dyaw_abs = self.dQ['yaw']
+        dP_dyaw_abs = self.dP['yaw']
+
+        np.testing.assert_allclose(dT_dyaw_abs, dT_dyaw, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dyaw_abs, dQ_dyaw, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dyaw_abs, dP_dyaw, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dyaw3(self):
+
+        dCT_dyaw = self.power_gradients['CT', 'yaw']
+        dCQ_dyaw = self.power_gradients['CQ', 'yaw']
+        dCP_dyaw = self.power_gradients['CP', 'yaw']
+
+        dCT_dyaw_abs = self.dCT['yaw']
+        dCQ_dyaw_abs = self.dCQ['yaw']
+        dCP_dyaw_abs = self.dCP['yaw']
+
+        np.testing.assert_allclose(dCT_dyaw_abs, dCT_dyaw, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dyaw_abs, dCQ_dyaw, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dyaw_abs, dCP_dyaw, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dazimuth1(self):
+
+        dNp_dazimuth = self.loads_gradients['Np', 'azimuth']
+        dTp_dazimuth = self.loads_gradients['Tp', 'azimuth']
+
+        dNp_dazimuth_abs = self.dNp['azimuth']
+        dTp_dazimuth_abs = self.dTp['azimuth']
+
+        np.testing.assert_allclose(dNp_dazimuth_abs, dNp_dazimuth, rtol=1e-5, atol=1e-6)
+        np.testing.assert_allclose(dTp_dazimuth_abs, dTp_dazimuth, rtol=1e-5, atol=1e-6)
+
+
+    def test_dUinf1(self):
+
+        dNp_dUinf = self.loads_gradients['Np', 'Uinf']
+        dTp_dUinf = self.loads_gradients['Tp', 'Uinf']
+
+        dNp_dUinf_abs = self.dNp['Uinf']
+        dTp_dUinf_abs = self.dTp['Uinf']
+
+        np.testing.assert_allclose(dNp_dUinf_abs, dNp_dUinf, rtol=1e-5, atol=1e-6)
+        np.testing.assert_allclose(dTp_dUinf_abs, dTp_dUinf, rtol=1e-5, atol=1e-6)
+
+
+    def test_dUinf2(self):
+
+        dT_dUinf = self.power_gradients['T', 'Uinf']
+        dQ_dUinf = self.power_gradients['Q', 'Uinf']
+        dP_dUinf = self.power_gradients['P', 'Uinf']
+
+        dT_dUinf_abs = self.dT['Uinf']
+        dQ_dUinf_abs = self.dQ['Uinf']
+        dP_dUinf_abs = self.dP['Uinf']
+
+        np.testing.assert_allclose(dT_dUinf_abs, dT_dUinf, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dUinf_abs, dQ_dUinf, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dUinf_abs, dP_dUinf, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dUinf3(self):
+
+        dCT_dUinf = self.power_gradients['CT', 'Uinf']
+        dCQ_dUinf = self.power_gradients['CQ', 'Uinf']
+        dCP_dUinf = self.power_gradients['CP', 'Uinf']
+
+        dCT_dUinf_abs = self.dCT['Uinf']
+        dCQ_dUinf_abs = self.dCQ['Uinf']
+        dCP_dUinf_abs = self.dCP['Uinf']
+
+        np.testing.assert_allclose(dCT_dUinf_abs, dCT_dUinf, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dUinf_abs, dCQ_dUinf, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dUinf_abs, dCP_dUinf, rtol=5e-5, atol=1e-8)
+
+
+    def test_dOmega1(self):
+
+        dNp_dOmega = self.loads_gradients['Np', 'Omega']
+        dTp_dOmega = self.loads_gradients['Tp', 'Omega']
+
+        dNp_dOmega_abs = self.dNp['Omega']
+        dTp_dOmega_abs = self.dTp['Omega']
+
+        np.testing.assert_allclose(dNp_dOmega_abs, dNp_dOmega, rtol=1e-5, atol=1e-6)
+        np.testing.assert_allclose(dTp_dOmega_abs, dTp_dOmega, rtol=1e-5, atol=1e-6)
+
+
+    def test_dOmega2(self):
+
+        dT_dOmega = self.power_gradients['T', 'Omega']
+        dQ_dOmega = self.power_gradients['Q', 'Omega']
+        dP_dOmega = self.power_gradients['P', 'Omega']
+
+        dT_dOmega_abs = self.dT['Omega']
+        dQ_dOmega_abs = self.dQ['Omega']
+        dP_dOmega_abs = self.dP['Omega']
+
+        np.testing.assert_allclose(dT_dOmega_abs, dT_dOmega, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dOmega_abs, dQ_dOmega, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dOmega_abs, dP_dOmega, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dOmega3(self):
+
+        dCT_dOmega = self.power_gradients['CT', 'Omega']
+        dCQ_dOmega = self.power_gradients['CQ', 'Omega']
+        dCP_dOmega = self.power_gradients['CP', 'Omega']
+
+        dCT_dOmega_abs = self.power_gradients['CT', 'Omega']
+        dCQ_dOmega_abs = self.power_gradients['CQ', 'Omega']
+        dCP_dOmega_abs = self.power_gradients['CP', 'Omega']
+
+        np.testing.assert_allclose(dCT_dOmega_abs, dCT_dOmega, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dOmega_abs, dCQ_dOmega, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dOmega_abs, dCP_dOmega, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dpitch1(self):
+
+        dNp_dpitch = self.loads_gradients['Np', 'pitch']
+        dTp_dpitch = self.loads_gradients['Tp', 'pitch']
+
+        dNp_dpitch_abs = self.dNp['pitch']
+        dTp_dpitch_abs = self.dTp['pitch']
+
+        np.testing.assert_allclose(dNp_dpitch_abs, dNp_dpitch, rtol=5e-5, atol=1e-6)
+        np.testing.assert_allclose(dTp_dpitch_abs, dTp_dpitch, rtol=5e-5, atol=1e-6)
+
+
+    def test_dpitch2(self):
+
+        dT_dpitch = self.power_gradients['T', 'pitch']
+        dQ_dpitch = self.power_gradients['Q', 'pitch']
+        dP_dpitch = self.power_gradients['P', 'pitch']
+
+        dT_dpitch_abs = self.dT['pitch']
+        dQ_dpitch_abs = self.dQ['pitch']
+        dP_dpitch_abs = self.dP['pitch']
+
+        np.testing.assert_allclose(dT_dpitch_abs, dT_dpitch, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dQ_dpitch_abs, dQ_dpitch, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dP_dpitch_abs, dP_dpitch, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dpitch3(self):
+
+        dCT_dpitch = self.power_gradients['CT', 'pitch']
+        dCQ_dpitch = self.power_gradients['CQ', 'pitch']
+        dCP_dpitch = self.power_gradients['CP', 'pitch']
+
+        dCT_dpitch_abs = self.dCT['pitch']
+        dCQ_dpitch_abs = self.dCQ['pitch']
+        dCP_dpitch_abs = self.dCP['pitch']
+
+        np.testing.assert_allclose(dCT_dpitch_abs, dCT_dpitch, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dpitch_abs, dCQ_dpitch, rtol=5e-5, atol=1e-8)
+        np.testing.assert_allclose(dCP_dpitch_abs, dCP_dpitch, rtol=5e-5, atol=1e-8)
+
+
+
+    def test_dprecurve1(self):
+
+        # precurve = np.linspace(1, 10, self.n)
+        # precurveTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
+        #
+        # Np, Tp, dNp, dTp \
+        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+
+        dNp_dprecurve = self.loads_gradients['Np', 'precurve']
+        dTp_dprecurve = self.loads_gradients['Tp', 'precurve']
+
+        dNp_dprecurve_abs = self.dNp['precurve']
+        dTp_dprecurve_abs = self.dTp['precurve']
+
+        np.testing.assert_allclose(dNp_dprecurve_abs, dNp_dprecurve, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dTp_dprecurve_abs, dTp_dprecurve, rtol=3e-4, atol=1e-8)
+
+
+    def test_dprecurve2(self):
+
+        # precurve = np.linspace(1, 10, self.n)
+        # precurveTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
+        #
+        # P, T, Q, dP, dT, dQ \
+        #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=False)
+
+        dT_dprecurve = self.power_gradients['T', 'precurve']
+        dQ_dprecurve = self.power_gradients['Q', 'precurve']
+        dP_dprecurve = self.power_gradients['P', 'precurve']
+
+        dT_dprecurve_abs = self.dT['precurve']
+        dQ_dprecurve_abs = self.dQ['precurve']
+        dP_dprecurve_abs = self.dP['precurve']
+
+        np.testing.assert_allclose(dT_dprecurve_abs, dT_dprecurve, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dQ_dprecurve_abs, dQ_dprecurve, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dP_dprecurve_abs, dP_dprecurve, rtol=3e-4, atol=1e-8)
+
+
+    def test_dprecurve3(self):
+
+        # precurve = np.linspace(1, 10, self.n)
+        # precurveTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
+        #
+        # CP, CT, CQ, dCP, dCT, dCQ \
+        #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=True)
+
+        dCT_dprecurve = self.power_gradients['CT', 'precurve']
+        dCQ_dprecurve = self.power_gradients['CQ', 'precurve']
+        dCP_dprecurve = self.power_gradients['CP', 'precurve']
+
+
+        dCT_dprecurve_abs = self.dCT['precurve']
+        dCQ_dprecurve_abs = self.dCQ['precurve']
+        dCP_dprecurve_abs = self.dCP['precurve']
+
+        np.testing.assert_allclose(dCT_dprecurve_abs, dCT_dprecurve, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dprecurve_abs, dCQ_dprecurve, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dCP_dprecurve_abs, dCP_dprecurve, rtol=3e-4, atol=1e-8)
+
+
+    def test_dpresweep1(self):
+
+        # presweep = np.linspace(1, 10, self.n)
+        # presweepTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+        #
+        # Np, Tp, dNp, dTp \
+        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+
+        dNp_dpresweep = self.loads_gradients['Np', 'presweep']
+        dTp_dpresweep = self.loads_gradients['Tp', 'presweep']
+
+        dNp_dpresweep_abs = self.dNp['presweep']
+        dTp_dpresweep_abs = self.dTp['presweep']
+
+        np.testing.assert_allclose(dNp_dpresweep_abs, dNp_dpresweep, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(dTp_dpresweep_abs, dTp_dpresweep, rtol=1e-5, atol=1e-8)
+
+
+    def test_dpresweep2(self):
+
+        # presweep = np.linspace(1, 10, self.n)
+        # presweepTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+        #
+        # P, T, Q, dP, dT, dQ \
+        #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=False)
+
+        dT_dpresweep = self.power_gradients['T', 'presweep']
+        dQ_dpresweep = self.power_gradients['Q', 'presweep']
+        dP_dpresweep = self.power_gradients['P', 'presweep']
+
+
+        dT_dpresweep_abs = self.dT['presweep']
+        dQ_dpresweep_abs = self.dQ['presweep']
+        dP_dpresweep_abs = self.dP['presweep']
+
+        np.testing.assert_allclose(dT_dpresweep_abs, dT_dpresweep, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dQ_dpresweep_abs, dQ_dpresweep, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dP_dpresweep_abs, dP_dpresweep, rtol=3e-4, atol=1e-8)
+
+
+
+
+    def test_dpresweep3(self):
+
+        # presweep = np.linspace(1, 10, self.n)
+        # presweepTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+        #
+        # CP, CT, CQ, dCP, dCT, dCQ \
+        #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=True)
+
+        dCT_dpresweep = self.power_gradients['CT', 'presweep']
+        dCQ_dpresweep = self.power_gradients['CQ', 'presweep']
+        dCP_dpresweep = self.power_gradients['CP', 'presweep']
+
+        dCT_dpresweep_abs = self.dCT['presweep']
+        dCQ_dpresweep_abs = self.dCQ['presweep']
+        dCP_dpresweep_abs = self.dCP['presweep']
+
+        np.testing.assert_allclose(dCT_dpresweep_abs, dCT_dpresweep, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dpresweep_abs, dCQ_dpresweep, rtol=3e-4, atol=1e-8)
+        np.testing.assert_allclose(dCP_dpresweep_abs, dCP_dpresweep, rtol=3e-4, atol=1e-8)
+
+
+
+    def test_dprecurveTip1(self):
+
+        # precurve = np.linspace(1, 10, self.n)
+        # precurveTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
+        #
+        # Np, Tp, dNp, dTp \
+        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+
+        dNp_dprecurveTip = self.loads_gradients['Np', 'precurveTip']
+        dTp_dprecurveTip = self.loads_gradients['Tp', 'precurveTip']
+
+
+        np.testing.assert_allclose(dNp_dprecurveTip, 0.0, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dTp_dprecurveTip, 0.0, rtol=1e-4, atol=1e-8)
+
+
+    def test_dprecurveTip2(self):
+
+        # precurve = np.linspace(1, 10, self.n)
+        # precurveTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
+        #
+        # P, T, Q, dP, dT, dQ \
+        #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=False)
+
+        dT_dprecurveTip = self.power_gradients['T', 'precurveTip']
+        dQ_dprecurveTip = self.power_gradients['Q', 'precurveTip']
+        dP_dprecurveTip = self.power_gradients['P', 'precurveTip']
+
+        dT_dprecurveTip_abs = self.dT['precurveTip']
+        dQ_dprecurveTip_abs = self.dQ['precurveTip']
+        dP_dprecurveTip_abs = self.dP['precurveTip']
+
+        np.testing.assert_allclose(dT_dprecurveTip_abs, dT_dprecurveTip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dQ_dprecurveTip_abs, dQ_dprecurveTip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dP_dprecurveTip_abs, dP_dprecurveTip, rtol=1e-4, atol=1e-8)
+
+
+
+    def test_dprecurveTip3(self):
+
+        # precurve = np.linspace(1, 10, self.n)
+        # precurveTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, precurve=precurve, precurveTip=precurveTip)
+        #
+        # CP, CT, CQ, dCP, dCT, dCQ \
+        #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=True)
+
+        dCT_dprecurveTip = self.power_gradients['CT', 'precurveTip']
+        dCQ_dprecurveTip = self.power_gradients['CQ', 'precurveTip']
+        dCP_dprecurveTip = self.power_gradients['CP', 'precurveTip']
+
+        dCT_dprecurveTip_abs = self.dCT['precurveTip']
+        dCQ_dprecurveTip_abs = self.dCQ['precurveTip']
+        dCP_dprecurveTip_abs = self.dCP['precurveTip']
+
+        np.testing.assert_allclose(dCT_dprecurveTip_abs, dCT_dprecurveTip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dprecurveTip_abs, dCQ_dprecurveTip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dCP_dprecurveTip_abs, dCP_dprecurveTip, rtol=1e-4, atol=1e-8)
+
+
+    def test_dpresweepTip1(self):
+
+        # presweep = np.linspace(1, 10, self.n)
+        # presweepTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+        #
+        # Np, Tp, dNp, dTp \
+        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+
+        dNp_dpresweepTip = self.loads_gradients['Np', 'presweepTip']
+        dTp_dpresweepTip = self.loads_gradients['Tp', 'presweepTip']
+
+        np.testing.assert_allclose(dNp_dpresweepTip, 0.0, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dTp_dpresweepTip, 0.0, rtol=1e-4, atol=1e-8)
+
+
+    def test_dpresweepTip2(self):
+
+        # presweep = np.linspace(1, 10, self.n)
+        # presweepTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+        #
+        # P, T, Q, dP, dT, dQ \
+        #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=False)
+
+        dT_dpresweepTip = self.power_gradients['T', 'presweepTip']
+        dQ_dpresweepTip = self.power_gradients['Q', 'presweepTip']
+        dP_dpresweepTip = self.power_gradients['P', 'presweepTip']
+
+        dT_dpresweepTip_abs = self.dT['presweepTip']
+        dQ_dpresweepTip_abs = self.dQ['presweepTip']
+        dP_dpresweepTip_abs = self.dP['presweepTip']
+
+        np.testing.assert_allclose(dT_dpresweepTip_abs, dT_dpresweepTip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dQ_dpresweepTip_abs, dQ_dpresweepTip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dP_dpresweepTip_abs, dP_dpresweepTip, rtol=1e-4, atol=1e-8)
+
+
+
+    def test_dpresweepTip3(self):
+
+        # presweep = np.linspace(1, 10, self.n)
+        # presweepTip = 10.1
+        # precone = 0.0
+        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+        #
+        # CP, CT, CQ, dCP, dCT, dCQ \
+        #     = rotor.evaluate([self.Uinf], [self.Omega], [self.pitch], coefficient=True)
+
+        dCT_dpresweepTip = self.power_gradients['CT', 'presweepTip']
+        dCQ_dpresweepTip = self.power_gradients['CQ', 'presweepTip']
+        dCP_dpresweepTip = self.power_gradients['CP', 'presweepTip']
+
+        dCT_dpresweepTip_abs = self.dCT['presweepTip']
+        dCQ_dpresweepTip_abs = self.dCQ['presweepTip']
+        dCP_dpresweepTip_abs = self.dCP['presweepTip']
+
+        np.testing.assert_allclose(dCT_dpresweepTip_abs, dCT_dpresweepTip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dCQ_dpresweepTip_abs, dCQ_dpresweepTip, rtol=1e-4, atol=1e-8)
+        np.testing.assert_allclose(dCP_dpresweepTip_abs, dCP_dpresweepTip, rtol=1e-4, atol=1e-8)
 
 
 
@@ -1058,7 +1069,8 @@ from ccblade2 import CCAirfoil, CCBlade, LoadsGroup, BrentGroup, AirfoilComp, Fl
 #         loads.run()
 #         loads_test_total_gradients = open('loads_test_total_gradients.txt', 'w')
 #         print "Generating gradients for Test 2. Please wait."
-#         loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp'])
+#         # loads_gradients = loads.check_total_derivatives(out_stream=loads_test_total_gradients, unknown_list=['Np', 'Tp'])
+#         loads_gradients = check_gradient_total(loads, unknown_list=['Np', 'Tp'])
 #         print "Gradients generated for Test 2."
 #         cls.loads_gradients = loads_gradients
 #         cls.n = len(r)
@@ -1068,7 +1080,7 @@ from ccblade2 import CCAirfoil, CCBlade, LoadsGroup, BrentGroup, AirfoilComp, Fl
 #
 #         dNp_dr = self.loads_gradients['Np', 'r']['J_fwd']
 #         dTp_dr = self.loads_gradients['Tp', 'r']['J_fwd']
-#         dNp_dr_fd = self.loads_gradients['Np', 'r']['J_fd']
+#         dNp_dr_abs = self.loads_gradients['Np', 'r']['J_fd']
 #         dTp_dr_fd = self.loads_gradients['Tp', 'r']['J_fd']
 #
 #         np.testing.assert_allclose(dNp_dr_fd, dNp_dr, rtol=1e-4, atol=1e-8)
@@ -1292,7 +1304,7 @@ from ccblade2 import CCAirfoil, CCBlade, LoadsGroup, BrentGroup, AirfoilComp, Fl
 #
 #         np.testing.assert_allclose(dNp_dpresweepTip_fd, 0.0, rtol=1e-4, atol=1e-8)
 #         np.testing.assert_allclose(dTp_dpresweepTip_fd, 0.0, rtol=1e-4, atol=1e-8)
-#
+
 
 # @unittest.skip("Test takes a long time")
 # class TestGradientsFreestreamArray(unittest.TestCase):
@@ -1357,59 +1369,71 @@ from ccblade2 import CCAirfoil, CCBlade, LoadsGroup, BrentGroup, AirfoilComp, Fl
 #         n = len(r)
 #
 #         ## Power Gradients
-#         ccblade = Problem()
-#         root = ccblade.root = CCBlade(nSector, n)
-#         ccblade.setup(check=False)
-#         ccblade['Rhub'] = Rhub
-#         ccblade['Rtip'] = Rtip
-#         ccblade['r'] = r
-#         ccblade['chord'] = chord
-#         ccblade['theta'] = np.radians(theta)
-#         ccblade['B'] = B
-#         ccblade['rho'] = rho
-#         ccblade['mu'] = mu
-#         ccblade['tilt'] = np.radians(tilt)
-#         ccblade['precone'] = np.radians(precone)
-#         ccblade['yaw'] = np.radians(yaw)
-#         ccblade['shearExp'] = shearExp
-#         ccblade['hubHt'] = hubHt
-#         ccblade['nSector'] = nSector
-#         ccblade['af'] = af
-#         ccblade['bemoptions'] = bemoptions
+#         ccblade_ = Problem()
+#         root = ccblade_.root = CCBlade(nSector, n)
+#         ccblade_.setup(check=False)
+#         ccblade_['Rhub'] = Rhub
+#         ccblade_['Rtip'] = Rtip
+#         ccblade_['r'] = r
+#         ccblade_['chord'] = chord
+#         ccblade_['theta'] = np.radians(theta)
+#         ccblade_['B'] = B
+#         ccblade_['rho'] = rho
+#         ccblade_['mu'] = mu
+#         ccblade_['tilt'] = np.radians(tilt)
+#         ccblade_['precone'] = np.radians(precone)
+#         ccblade_['yaw'] = np.radians(yaw)
+#         ccblade_['shearExp'] = shearExp
+#         ccblade_['hubHt'] = hubHt
+#         ccblade_['nSector'] = nSector
+#         ccblade_['af'] = af
+#         ccblade_['bemoptions'] = bemoptions
 #
 #         power_gradients = [0]*len(Uinf)
 #
 #         for i in range(len(Uinf)):
-#             ccblade['Uinf'] = Uinf[i]
-#             ccblade['Omega'] = Omega[i]
-#             ccblade['pitch'] = np.radians(pitch[i])
+#             ccblade_['Uinf'] = Uinf[i]
+#             ccblade_['Omega'] = Omega[i]
+#             ccblade_['pitch'] = np.radians(pitch[i])
 #
-#             ccblade.run()
+#             ccblade_.run()
 #
 #             power_test_total_gradients = open('power_test_total_gradients.txt', 'w')
 #             print "Generating gradients for Test " + str(i+3) + ". Please wait..."
-#             power_gradients_sub = ccblade.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+#             J_fwd_power_sub = check_gradient_total(ccblade_, unknown_list=['CP', 'CT', 'CQ', 'P', 'Q', 'T'])
+#             # power_gradients_sub = ccblade_.check_total_derivatives(out_stream=power_test_total_gradients, unknown_list=['CP', 'CT', 'CQ', 'P', 'T', 'Q'])
 #             print "Gradients " + str(i+3) + " calculated."
-#             power_gradients[i] = power_gradients_sub
+#             power_gradients[i] = J_fwd_power_sub
 #
 #         cls.power_gradients = power_gradients
 #         cls.n = len(r)
 #         cls.npts = len(Uinf)
 #
+#         rotor = ccblade.CCBlade(r, chord, theta, af, Rhub, Rtip,
+#             B, rho, mu, precone, tilt, yaw, shearExp,
+#             hubHt, nSector, derivatives=True)
+#
+#         P, T, Q, cls.dP, cls.dT, cls.dQ \
+#             = rotor.evaluate([Uinf], [Omega], [pitch], coefficient=False)
+#
+#         CP, CT, CQ, cls.dCP, cls.dCT, cls.dCQ \
+#             = rotor.evaluate([Uinf], [Omega], [pitch], coefficient=True)
+#
+#
 #     def test_dUinf2(self):
 #
 #         for i in range(self.npts):
-#             dT_dUinf = self.power_gradients[i]['T', 'Uinf']['J_fwd']
-#             dQ_dUinf = self.power_gradients[i]['Q', 'Uinf']['J_fwd']
-#             dP_dUinf = self.power_gradients[i]['P', 'Uinf']['J_fwd']
+#             dT_dUinf = self.power_gradients[i]['T', 'Uinf']
+#             dQ_dUinf = self.power_gradients[i]['Q', 'Uinf']
+#             dP_dUinf = self.power_gradients[i]['P', 'Uinf']
 #
-#             dT_dUinf_fd = self.power_gradients[i]['T', 'Uinf']['J_fd']
-#             dQ_dUinf_fd = self.power_gradients[i]['Q', 'Uinf']['J_fd']
-#             dP_dUinf_fd = self.power_gradients[i]['P', 'Uinf']['J_fd']
+#             dT_dUinf_old = self.dT[i]['Uinf']
+#             dQ_dUinf_old = self.dQ[i]['Uinf']
+#             dP_dUinf_old = self.dP[i]['Uinf']
 #
-#             np.testing.assert_allclose(dT_dUinf_fd, dT_dUinf, rtol=1e-5, atol=1e-8)
-#             np.testing.assert_allclose(dQ_dUinf_fd, dQ_dUinf, rtol=5e-5, atol=1e-8)
-#             np.testing.assert_allclose(dP_dUinf_fd, dP_dUinf, rtol=5e-5, atol=1e-8)
+#             np.testing.assert_allclose(dT_dUinf_old, dT_dUinf, rtol=1e-5, atol=1e-8)
+#             np.testing.assert_allclose(dQ_dUinf_old, dQ_dUinf, rtol=5e-5, atol=1e-8)
+#             np.testing.assert_allclose(dP_dUinf_old, dP_dUinf, rtol=5e-5, atol=1e-8)
 #
 #
 #
