@@ -4,7 +4,7 @@ import warnings
 from math import cos, sin, pi, sqrt, acos, exp, factorial
 import numpy as np
 import _bem
-from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder, ScipyGMRES
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder, ScipyGMRES, NLGaussSeidel
 from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
@@ -72,6 +72,13 @@ class WindComponents(Component):
 
     def solve_nonlinear(self, params, unknowns, resids):
         unknowns['Vx'], unknowns['Vy'] = _bem.windcomponents(params['r'], params['precurve'], params['presweep'], params['precone'], params['yaw'], params['tilt'], params['azimuth'], params['Uinf'], params['Omega'], params['hubHt'], params['shearExp'])
+
+    def list_deriv_vars(self):
+
+        inputs = ('r', 'precurve', 'presweep', 'Uinf', 'precone', 'azimuth', 'tilt', 'yaw', 'Omega', 'hubHt')
+        outputs = ('Vx', 'Vy')
+
+        return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
         J = {}
@@ -220,6 +227,8 @@ class FlowCondition(Component):
         J['Re_sub', 'Vy'] = params['rho'] * dW_dVy * params['chord'] / params['mu']
         J['Re_sub', 'a_sub'] = params['rho'] * dW_da * params['chord'] / params['mu']
         J['Re_sub', 'ap_sub'] = params['rho'] * dW_dap * params['chord'] / params['mu']
+        J['Re_sub', 'rho'] = Re / params['rho']
+        J['Re_sub', 'mu'] = -Re / params['mu'] #**2
 
         J['W_sub', 'Vx'] = dW_dVx
         J['W_sub', 'Vy'] = dW_dVy
@@ -359,10 +368,6 @@ class BEM(Component):
         # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
-        pass
-
-    def apply_nonlinear(self, params, unknowns, resids):
-
         r = params['r']
         Rhub = params['Rhub']
         Rtip = params['Rtip']
@@ -381,8 +386,44 @@ class BEM(Component):
             dR_dx[0] = 1.0  # just to prevent divide by zero
             da_dx = np.zeros(9)
             dap_dx = np.zeros(9)
-            unknowns['phi_sub'] = pi/2.0
-            resids['phi_sub'] = 0.0
+
+        else:
+            # ------ BEM solution method see (Ning, doi:10.1002/we.1636) ------
+            fzero, a, ap, dR_dx, da_dx, dap_dx = _bem.inductionfactors_dv(r, chord, Rhub, Rtip,
+             unknowns['phi_sub'], params['cl_sub'], params['cd_sub'], params['B'], Vx, Vy, dx_dx[5, :], dx_dx[1, :], dx_dx[6, :], dx_dx[7, :],
+             dx_dx[0, :], dcl_dx, dcd_dx, dx_dx[3, :], dx_dx[4, :], **bemoptions)
+            # resids['phi_sub'] = fzero
+            unknowns['a_sub'] = a
+            unknowns['ap_sub'] = ap
+            unknowns['da_dx'] = da_dx
+            unknowns['dap_dx'] = dap_dx
+            # self.fzero = fzero
+            # self.a = a
+            # self.ap = ap
+
+        self.dR_dx = dR_dx
+        self.da_dx = da_dx
+        self.dap_dx = dap_dx
+
+    def apply_nonlinear(self, params, unknowns, resids):
+        r = params['r']
+        Rhub = params['Rhub']
+        Rtip = params['Rtip']
+        Vx = params['Vx']
+        Vy = params['Vy']
+        bemoptions = params['bemoptions']
+        chord = params['chord']
+
+        dx_dx = np.eye(9)
+        # chain rule
+        dcl_dx = params['dcl_dalpha']*params['dalpha_dx'] + params['dcl_dRe']*params['dRe_dx']
+        dcd_dx = params['dcd_dalpha']*params['dalpha_dx'] + params['dcd_dRe']*params['dRe_dx']
+
+        if not (params['Omega'] != 0):
+            dR_dx = np.zeros(9)
+            dR_dx[0] = 1.0  # just to prevent divide by zero
+            da_dx = np.zeros(9)
+            dap_dx = np.zeros(9)
 
         else:
             # ------ BEM solution method see (Ning, doi:10.1002/we.1636) ------
@@ -390,14 +431,16 @@ class BEM(Component):
              unknowns['phi_sub'], params['cl_sub'], params['cd_sub'], params['B'], Vx, Vy, dx_dx[5, :], dx_dx[1, :], dx_dx[6, :], dx_dx[7, :],
              dx_dx[0, :], dcl_dx, dcd_dx, dx_dx[3, :], dx_dx[4, :], **bemoptions)
             resids['phi_sub'] = fzero
-            unknowns['a_sub'] = a
-            unknowns['ap_sub'] = ap
-            unknowns['da_dx'] = da_dx
-            unknowns['dap_dx'] = dap_dx
+            resids['a_sub'] = a - unknowns['a_sub']
+            resids['ap_sub'] = ap - unknowns['ap_sub']
+            # self.fzero = fzero
+            # self.a = a
+            # self.ap = ap
 
         self.dR_dx = dR_dx
         self.da_dx = da_dx
         self.dap_dx = dap_dx
+
 
     def linearize(self, params, unknowns, resids):
         J = {}
@@ -441,28 +484,30 @@ class BEM(Component):
         dR_dcl = cphi/(Vy/Vx)*(sigma_p*(sphi)/4.0/F/sphi/cphi) # 1/(Vy/Vx)*sigma_p/4.0/F
         dR_dcd = cphi/(Vy/Vx)*(sigma_p*(-cphi)/4.0/F/sphi/cphi) # -1/(Vy/Vx)*sigma_p*cphi/4.0/F/sphi
 
-        J['phi_sub', 'cl_sub'] = dR_dcl
-        J['phi_sub', 'cd_sub'] = dR_dcd
-        # J['a_sub', 'phi_sub'] = da_dx[0]
-        # J['a_sub', 'chord'] = da_dx[1]
-        # J['a_sub', 'theta'] = da_dx[2]
-        # J['a_sub', 'Vx'] = da_dx[3]
-        # J['a_sub', 'Vy'] = da_dx[4]
-        # J['a_sub', 'r'] = da_dx[5]
-        # J['a_sub', 'Rhub'] = da_dx[6]
-        # J['a_sub', 'Rtip'] = da_dx[7]
-        # J['a_sub', 'pitch'] = da_dx[8]
+        # J['phi_sub', 'cl_sub'] = dR_dcl
+        # J['phi_sub', 'cd_sub'] = dR_dcd
+        J['a_sub', 'phi_sub'] = da_dx[0]
+        J['a_sub', 'chord'] = da_dx[1]
+        J['a_sub', 'theta'] = da_dx[2]
+        J['a_sub', 'Vx'] = da_dx[3]
+        J['a_sub', 'Vy'] = da_dx[4]
+        J['a_sub', 'r'] = da_dx[5]
+        J['a_sub', 'Rhub'] = da_dx[6]
+        J['a_sub', 'Rtip'] = da_dx[7]
+        J['a_sub', 'pitch'] = da_dx[8]
 
-        # J['ap_sub', 'phi_sub'] = dap_dx[0]
-        # J['ap_sub', 'chord'] = dap_dx[1]
-        # J['ap_sub', 'theta'] = dap_dx[2]
-        # J['ap_sub', 'Vx'] = dap_dx[3]
-        # J['ap_sub', 'Vy'] = dap_dx[4]
-        # J['ap_sub', 'r'] = dap_dx[5]
-        # J['ap_sub', 'Rhub'] = dap_dx[6]
-        # J['ap_sub', 'Rtip'] = dap_dx[7]
-        # J['ap_sub', 'pitch'] = dap_dx[8]
+        J['ap_sub', 'phi_sub'] = dap_dx[0]
+        J['ap_sub', 'chord'] = dap_dx[1]
+        J['ap_sub', 'theta'] = dap_dx[2]
+        J['ap_sub', 'Vx'] = dap_dx[3]
+        J['ap_sub', 'Vy'] = dap_dx[4]
+        J['ap_sub', 'r'] = dap_dx[5]
+        J['ap_sub', 'Rhub'] = dap_dx[6]
+        J['ap_sub', 'Rtip'] = dap_dx[7]
+        J['ap_sub', 'pitch'] = dap_dx[8]
 
+
+        J['phi_sub', 'cl_sub'] = 0.0
         return J
 
 class MUX(Component):
@@ -625,7 +670,7 @@ class CCEvaluate(Component):
         self.add_param('rho', shape=1)
         self.add_param('precone', shape=1)
         self.add_param('Rhub', shape=1)
-        self.add_param('nSector', shape=1)
+        self.add_param('nSector', val=4)
         self.add_param('rotorR', shape=1)
         for i in range(nSector):
             self.add_param('Np'+str(i+1), val=np.zeros(n))
@@ -784,9 +829,9 @@ class CCEvaluate(Component):
         unknowns['T'] = T[0]
         unknowns['Q'] = Q[0]
 
-        self.dCP_drho = CP * rho
-        self.dCT_drho = CT * rho
-        self.dCQ_drho = CQ * rho
+        self.dCP_drho = -CP / rho
+        self.dCT_drho = -CT / rho
+        self.dCQ_drho = -CQ / rho
         self.dCP_drotorR = -2 * P / (q * pi * rotorR**3 * Uinf)
         self.dCT_drotorR = -2 * T / (q * pi * rotorR**3)
         self.dCQ_drotorR = -3 * Q / (q * pi * rotorR**4)
@@ -908,8 +953,14 @@ class BrentGroup(Group):
         sub = self.add('sub', Group(), promotes=['*'])
         sub.add('bem', BEM(n, i), promotes=['*'])
         sub.ln_solver = ScipyGMRES()
+        sub.nl_solver = Brent()
         self.ln_solver = ScipyGMRES()
-        self.nl_solver = Brent()
+        self.nl_solver = NLGaussSeidel()
+        self.nl_solver.options['atol'] = 1e-12 #TODO Check
+        self.nl_solver.options['rtol'] = 1e-12
+        # sub.ln_solver = ScipyGMRES()
+        # self.ln_solver = ScipyGMRES()
+        # self.nl_solver = Brent()
         # set standard limits
         epsilon = 1e-6
         phi_lower = epsilon
@@ -922,17 +973,10 @@ class BrentGroup(Group):
         #         else:
         #             phi_lower = pi/2
         #             phi_upper = pi - epsilon
-        self.nl_solver.options['lower_bound'] = phi_lower
-        self.nl_solver.options['upper_bound'] = phi_upper
-        # self.nl_solver.options['xtol'] = 1e-6
-        rtol = np.array([0.000001])
-        self.nl_solver.options['rtol'] = rtol[0] #1e-6
-        self.nl_solver.options['state_var'] = 'phi_sub'
-
+        sub.nl_solver.options['lower_bound'] = phi_lower
+        sub.nl_solver.options['upper_bound'] = phi_upper
+        sub.nl_solver.options['state_var'] = 'phi_sub'
         # self.fd_options['force_fd'] = True
-        self.fd_options['step_type'] = 'relative'
-        self.fd_options['form'] = 'central'
-
     def list_deriv_vars(self):
 
         inputs = ('Vx', 'Vy', 'chord', 'theta', 'pitch', 'rho', 'mu')
@@ -1225,11 +1269,11 @@ if __name__ == "__main__":
     print function_calls_XFOIL
 
     test_grad = open('partial_test_grad2.txt', 'w')
-    # power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
+
+    power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
     # power_partial = loads.check_partial_derivatives(out_stream=test_grad)
-
-
-
+    print loads['Np']
+    print loads['Tp']
     n2 = 1
 
     ## Test CCBlade
@@ -1273,8 +1317,10 @@ if __name__ == "__main__":
     ccblade.run()
     print time.time() - t0, "seconds wall time"
 
-
-    # test_grad = open('partial_test_grad.txt', 'w')
+    print ccblade['CP']
+    print ccblade['CQ']
+    print ccblade['CT']
+    test_grad = open('partial_test_grad.txt', 'w')
     # power_gradients = ccblade.check_total_derivatives(out_stream=test_grad, unknown_list=['CP'])
     # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
     # power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
