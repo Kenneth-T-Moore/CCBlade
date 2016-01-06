@@ -4,7 +4,7 @@ import warnings
 from math import cos, sin, pi, sqrt, acos, exp
 import numpy as np
 import _bem
-from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder, ScipyGMRES
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder, ScipyGMRES, NLGaussSeidel
 from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
@@ -261,7 +261,7 @@ class AirfoilComp(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
         self.i = i
 
     def solve_nonlinear(self, params, unknowns, resids):
@@ -325,13 +325,9 @@ class BEM(Component):
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
         self.i = i
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
-        pass
-
-    def apply_nonlinear(self, params, unknowns, resids):
-
         r = params['r']
         Rhub = params['Rhub']
         Rtip = params['Rtip']
@@ -350,23 +346,37 @@ class BEM(Component):
             dR_dx[0] = 1.0  # just to prevent divide by zero
             da_dx = np.zeros(9)
             dap_dx = np.zeros(9)
-            unknowns['phi_sub'] = pi/2.0
-            resids['phi_sub'] = 0.0
 
         else:
             # ------ BEM solution method see (Ning, doi:10.1002/we.1636) ------
             fzero, a, ap, dR_dx, da_dx, dap_dx = _bem.inductionfactors_dv(r, chord, Rhub, Rtip,
              unknowns['phi_sub'], params['cl_sub'], params['cd_sub'], params['B'], Vx, Vy, dx_dx[5, :], dx_dx[1, :], dx_dx[6, :], dx_dx[7, :],
              dx_dx[0, :], dcl_dx, dcd_dx, dx_dx[3, :], dx_dx[4, :], **bemoptions)
-            resids['phi_sub'] = fzero
+            # resids['phi_sub'] = fzero
             unknowns['a_sub'] = a
             unknowns['ap_sub'] = ap
             unknowns['da_dx'] = da_dx
             unknowns['dap_dx'] = dap_dx
+            self.fzero = fzero
+            self.a = a
+            self.ap = ap
 
         self.dR_dx = dR_dx
         self.da_dx = da_dx
         self.dap_dx = dap_dx
+
+    def apply_nonlinear(self, params, unknowns, resids):
+        if not (params['Omega'] != 0):
+            unknowns['phi_sub'] = pi/2.0
+            resids['phi_sub'] = 0.0
+            resids['a_sub'] = 0.0
+            resids['ap_sub'] = 0.0
+
+        else:
+            resids['phi_sub'] = self.fzero
+            resids['a_sub'] = self.a - unknowns['a_sub']
+            resids['ap_sub'] = self.ap - unknowns['ap_sub']
+
 
     def linearize(self, params, unknowns, resids):
         J = {}
@@ -874,8 +884,12 @@ class BrentGroup(Group):
         sub = self.add('sub', Group(), promotes=['*'])
         sub.add('bem', BEM(n, i), promotes=['*'])
         sub.ln_solver = ScipyGMRES()
+        sub.nl_solver = Brent()
         self.ln_solver = ScipyGMRES()
-        self.nl_solver = Brent()
+        self.nl_solver = NLGaussSeidel()
+        # sub.ln_solver = ScipyGMRES()
+        # self.ln_solver = ScipyGMRES()
+        # self.nl_solver = Brent()
         # set standard limits
         epsilon = 1e-6
         phi_lower = epsilon
@@ -888,9 +902,9 @@ class BrentGroup(Group):
         #         else:
         #             phi_lower = pi/2
         #             phi_upper = pi - epsilon
-        self.nl_solver.options['lower_bound'] = phi_lower
-        self.nl_solver.options['upper_bound'] = phi_upper
-        self.nl_solver.options['state_var'] = 'phi_sub'
+        sub.nl_solver.options['lower_bound'] = phi_lower
+        sub.nl_solver.options['upper_bound'] = phi_upper
+        sub.nl_solver.options['state_var'] = 'phi_sub'
 
     def list_deriv_vars(self):
 
@@ -1255,9 +1269,11 @@ if __name__ == "__main__":
     loads.run()
 
     test_grad = open('partial_test_grad2.txt', 'w')
+
     power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
     # power_partial = loads.check_partial_derivatives(out_stream=test_grad)
-
+    print loads['Np']
+    print loads['Tp']
     n2 = 1
 
     ## Test CCBlade
@@ -1297,9 +1313,11 @@ if __name__ == "__main__":
     ccblade['bemoptions'] = bemoptions
 
     ccblade.run()
-
+    print ccblade['CP']
+    print ccblade['CQ']
+    print ccblade['CT']
     test_grad = open('partial_test_grad.txt', 'w')
-    power_gradients = ccblade.check_total_derivatives(out_stream=test_grad, unknown_list=['CP'])
+    # power_gradients = ccblade.check_total_derivatives(out_stream=test_grad, unknown_list=['CP'])
     # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
     # power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
 
