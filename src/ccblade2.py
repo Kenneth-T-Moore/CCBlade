@@ -67,16 +67,17 @@ class WindComponents(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
+        # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
         unknowns['Vx'], unknowns['Vy'] = _bem.windcomponents(params['r'], params['precurve'], params['presweep'], params['precone'], params['yaw'], params['tilt'], params['azimuth'], params['Uinf'], params['Omega'], params['hubHt'], params['shearExp'])
 
-    def list_deriv_vars(self):
-
-        inputs = ('r', 'precurve', 'presweep', 'Uinf', 'precone', 'azimuth', 'tilt', 'yaw', 'Omega', 'hubHt')
-        outputs = ('Vx', 'Vy')
-
-        return inputs, outputs
+    # def list_deriv_vars(self):
+    #
+    #     inputs = ('r', 'precurve', 'presweep', 'Uinf', 'precone', 'azimuth', 'tilt', 'yaw', 'Omega', 'hubHt')
+    #     outputs = ('Vx', 'Vy')
+    #
+    #     return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
         J = {}
@@ -167,6 +168,7 @@ class FlowCondition(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
+        # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
 
@@ -178,12 +180,12 @@ class FlowCondition(Component):
         unknowns['W_sub'] = W
         unknowns['Re_sub'] = Re
 
-    def list_deriv_vars(self):
-
-        inputs = ('Vx', 'Vy', 'theta', 'pitch', 'rho', 'mu', 'phi_sub', 'a_sub', 'ap_sub')
-        outputs = ('alpha_sub', 'W_sub', 'Re_sub')
-
-        return inputs, outputs
+    # def list_deriv_vars(self):
+    #
+    #     inputs = ('Vx', 'Vy', 'theta', 'pitch', 'rho', 'mu', 'phi_sub', 'a_sub', 'ap_sub')
+    #     outputs = ('alpha_sub', 'W_sub', 'Re_sub')
+    #
+    #     return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
 
@@ -277,10 +279,10 @@ class AirfoilComp(Component):
         unknowns['cl_sub'], unknowns['cd_sub'] = params['af'][self.i].evaluate(params['alpha_sub'], params['Re_sub'])
         unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = params['af'][self.i].derivatives(params['alpha_sub'], params['Re_sub'])
 
-    def list_deriv_vars(self):
-        inputs = ('alpha_sub', 'Re_sub')
-        outputs = ('cl_sub', 'cd_sub')
-        return inputs, outputs
+    # def list_deriv_vars(self):
+    #     inputs = ('alpha_sub', 'Re_sub')
+    #     outputs = ('cl_sub', 'cd_sub')
+    #     return inputs, outputs
 
     def linearize(self, params, unknowns, resids):
         J = {}
@@ -366,25 +368,49 @@ class BEM(Component):
             unknowns['ap_sub'] = ap
             unknowns['da_dx'] = da_dx
             unknowns['dap_dx'] = dap_dx
-            self.fzero = fzero
-            self.a = a
-            self.ap = ap
+            # self.fzero = fzero
+            # self.a = a
+            # self.ap = ap
 
         self.dR_dx = dR_dx
         self.da_dx = da_dx
         self.dap_dx = dap_dx
 
     def apply_nonlinear(self, params, unknowns, resids):
+        r = params['r']
+        Rhub = params['Rhub']
+        Rtip = params['Rtip']
+        Vx = params['Vx']
+        Vy = params['Vy']
+        bemoptions = params['bemoptions']
+        chord = params['chord']
+
+        dx_dx = np.eye(9)
+        # chain rule
+        dcl_dx = params['dcl_dalpha']*params['dalpha_dx'] + params['dcl_dRe']*params['dRe_dx']
+        dcd_dx = params['dcd_dalpha']*params['dalpha_dx'] + params['dcd_dRe']*params['dRe_dx']
+
         if not (params['Omega'] != 0):
-            unknowns['phi_sub'] = pi/2.0
-            resids['phi_sub'] = 0.0
-            resids['a_sub'] = 0.0
-            resids['ap_sub'] = 0.0
+            dR_dx = np.zeros(9)
+            dR_dx[0] = 1.0  # just to prevent divide by zero
+            da_dx = np.zeros(9)
+            dap_dx = np.zeros(9)
 
         else:
-            resids['phi_sub'] = self.fzero
-            resids['a_sub'] = self.a - unknowns['a_sub']
-            resids['ap_sub'] = self.ap - unknowns['ap_sub']
+            # ------ BEM solution method see (Ning, doi:10.1002/we.1636) ------
+            fzero, a, ap, dR_dx, da_dx, dap_dx = _bem.inductionfactors_dv(r, chord, Rhub, Rtip,
+             unknowns['phi_sub'], params['cl_sub'], params['cd_sub'], params['B'], Vx, Vy, dx_dx[5, :], dx_dx[1, :], dx_dx[6, :], dx_dx[7, :],
+             dx_dx[0, :], dcl_dx, dcd_dx, dx_dx[3, :], dx_dx[4, :], **bemoptions)
+            resids['phi_sub'] = fzero
+            resids['a_sub'] = a - unknowns['a_sub']
+            resids['ap_sub'] = ap - unknowns['ap_sub']
+            # self.fzero = fzero
+            # self.a = a
+            # self.ap = ap
+
+        self.dR_dx = dR_dx
+        self.da_dx = da_dx
+        self.dap_dx = dap_dx
 
 
     def linearize(self, params, unknowns, resids):
@@ -394,15 +420,15 @@ class BEM(Component):
         da_dx = self.da_dx
         dap_dx = self.dap_dx
 
-        # J['phi_sub', 'phi_sub'] = dR_dx[0]
-        # J['phi_sub', 'chord'] = dR_dx[1]
-        # # J['phi_sub', 'theta'] = dR_dx[2]
-        # J['phi_sub', 'Vx'] = dR_dx[3]
-        # J['phi_sub', 'Vy'] = dR_dx[4]
-        # J['phi_sub', 'r'] = dR_dx[5]
-        # J['phi_sub', 'Rhub'] = dR_dx[6]
-        # J['phi_sub', 'Rtip'] = dR_dx[7]
-        # # J['phi_sub', 'pitch'] = dR_dx[8]
+        J['phi_sub', 'phi_sub'] = dR_dx[0]
+        J['phi_sub', 'chord'] = dR_dx[1]
+        # J['phi_sub', 'theta'] = dR_dx[2]
+        J['phi_sub', 'Vx'] = dR_dx[3]
+        J['phi_sub', 'Vy'] = dR_dx[4]
+        J['phi_sub', 'r'] = dR_dx[5]
+        J['phi_sub', 'Rhub'] = dR_dx[6]
+        J['phi_sub', 'Rtip'] = dR_dx[7]
+        # J['phi_sub', 'pitch'] = dR_dx[8]
 
         Vx = params['Vx']
         Vy = params['Vy']
@@ -431,25 +457,25 @@ class BEM(Component):
 
         # J['phi_sub', 'cl_sub'] = dR_dcl
         # J['phi_sub', 'cd_sub'] = dR_dcd
-        # J['a_sub', 'phi_sub'] = da_dx[0]
-        # J['a_sub', 'chord'] = da_dx[1]
-        # J['a_sub', 'theta'] = da_dx[2]
-        # J['a_sub', 'Vx'] = da_dx[3]
-        # J['a_sub', 'Vy'] = da_dx[4]
-        # J['a_sub', 'r'] = da_dx[5]
-        # J['a_sub', 'Rhub'] = da_dx[6]
-        # J['a_sub', 'Rtip'] = da_dx[7]
-        # J['a_sub', 'pitch'] = da_dx[8]
+        J['a_sub', 'phi_sub'] = da_dx[0]
+        J['a_sub', 'chord'] = da_dx[1]
+        J['a_sub', 'theta'] = da_dx[2]
+        J['a_sub', 'Vx'] = da_dx[3]
+        J['a_sub', 'Vy'] = da_dx[4]
+        J['a_sub', 'r'] = da_dx[5]
+        J['a_sub', 'Rhub'] = da_dx[6]
+        J['a_sub', 'Rtip'] = da_dx[7]
+        J['a_sub', 'pitch'] = da_dx[8]
 
-        # J['ap_sub', 'phi_sub'] = dap_dx[0]
-        # J['ap_sub', 'chord'] = dap_dx[1]
-        # J['ap_sub', 'theta'] = dap_dx[2]
-        # J['ap_sub', 'Vx'] = dap_dx[3]
-        # J['ap_sub', 'Vy'] = dap_dx[4]
-        # J['ap_sub', 'r'] = dap_dx[5]
-        # J['ap_sub', 'Rhub'] = dap_dx[6]
-        # J['ap_sub', 'Rtip'] = dap_dx[7]
-        # J['ap_sub', 'pitch'] = dap_dx[8]
+        J['ap_sub', 'phi_sub'] = dap_dx[0]
+        J['ap_sub', 'chord'] = dap_dx[1]
+        J['ap_sub', 'theta'] = dap_dx[2]
+        J['ap_sub', 'Vx'] = dap_dx[3]
+        J['ap_sub', 'Vy'] = dap_dx[4]
+        J['ap_sub', 'r'] = dap_dx[5]
+        J['ap_sub', 'Rhub'] = dap_dx[6]
+        J['ap_sub', 'Rtip'] = dap_dx[7]
+        J['ap_sub', 'pitch'] = dap_dx[8]
 
 
         J['phi_sub', 'cl_sub'] = 0.0
@@ -898,6 +924,8 @@ class BrentGroup(Group):
         sub.nl_solver = Brent()
         self.ln_solver = ScipyGMRES()
         self.nl_solver = NLGaussSeidel()
+        self.nl_solver.options['atol'] = 1e-12 #TODO Check
+        self.nl_solver.options['rtol'] = 1e-12
         # sub.ln_solver = ScipyGMRES()
         # self.ln_solver = ScipyGMRES()
         # self.nl_solver = Brent()
@@ -916,13 +944,13 @@ class BrentGroup(Group):
         sub.nl_solver.options['lower_bound'] = phi_lower
         sub.nl_solver.options['upper_bound'] = phi_upper
         sub.nl_solver.options['state_var'] = 'phi_sub'
-
-    def list_deriv_vars(self):
-
-        inputs = ('Vx', 'Vy', 'chord', 'theta', 'pitch', 'rho', 'mu')
-        outputs = ('phi_sub', 'a_sub', 'ap_sub')
-
-        return inputs, outputs
+        # self.fd_options['force_fd'] = True
+    # def list_deriv_vars(self):
+    #
+    #     inputs = ('Vx', 'Vy', 'chord', 'theta', 'pitch', 'rho', 'mu')
+    #     outputs = ('phi_sub', 'a_sub', 'ap_sub')
+    #
+    #     return inputs, outputs
 
 class LoadsGroup(Group):
     def __init__(self, n):
