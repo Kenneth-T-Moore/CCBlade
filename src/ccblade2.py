@@ -71,6 +71,13 @@ class WindComponents(Component):
     def solve_nonlinear(self, params, unknowns, resids):
         unknowns['Vx'], unknowns['Vy'] = _bem.windcomponents(params['r'], params['precurve'], params['presweep'], params['precone'], params['yaw'], params['tilt'], params['azimuth'], params['Uinf'], params['Omega'], params['hubHt'], params['shearExp'])
 
+    def list_deriv_vars(self):
+
+        inputs = ('r', 'precurve', 'presweep', 'Uinf', 'precone', 'azimuth', 'tilt', 'yaw', 'Omega', 'hubHt')
+        outputs = ('Vx', 'Vy')
+
+        return inputs, outputs
+
     def linearize(self, params, unknowns, resids):
         J = {}
         r = params['r']
@@ -217,6 +224,8 @@ class FlowCondition(Component):
         J['Re_sub', 'Vy'] = params['rho'] * dW_dVy * params['chord'] / params['mu']
         J['Re_sub', 'a_sub'] = params['rho'] * dW_da * params['chord'] / params['mu']
         J['Re_sub', 'ap_sub'] = params['rho'] * dW_dap * params['chord'] / params['mu']
+        J['Re_sub', 'rho'] = Re / params['rho']
+        J['Re_sub', 'mu'] = -Re / params['mu'] #**2
 
         J['W_sub', 'Vx'] = dW_dVx
         J['W_sub', 'Vy'] = dW_dVy
@@ -385,15 +394,15 @@ class BEM(Component):
         da_dx = self.da_dx
         dap_dx = self.dap_dx
 
-        J['phi_sub', 'phi_sub'] = dR_dx[0]
-        J['phi_sub', 'chord'] = dR_dx[1]
-        # J['phi_sub', 'theta'] = dR_dx[2]
-        J['phi_sub', 'Vx'] = dR_dx[3]
-        J['phi_sub', 'Vy'] = dR_dx[4]
-        J['phi_sub', 'r'] = dR_dx[5]
-        J['phi_sub', 'Rhub'] = dR_dx[6]
-        J['phi_sub', 'Rtip'] = dR_dx[7]
-        # J['phi_sub', 'pitch'] = dR_dx[8]
+        # J['phi_sub', 'phi_sub'] = dR_dx[0]
+        # J['phi_sub', 'chord'] = dR_dx[1]
+        # # J['phi_sub', 'theta'] = dR_dx[2]
+        # J['phi_sub', 'Vx'] = dR_dx[3]
+        # J['phi_sub', 'Vy'] = dR_dx[4]
+        # J['phi_sub', 'r'] = dR_dx[5]
+        # J['phi_sub', 'Rhub'] = dR_dx[6]
+        # J['phi_sub', 'Rtip'] = dR_dx[7]
+        # # J['phi_sub', 'pitch'] = dR_dx[8]
 
         Vx = params['Vx']
         Vy = params['Vy']
@@ -420,8 +429,8 @@ class BEM(Component):
         dR_dcl = cphi/(Vy/Vx)*(sigma_p*(sphi)/4.0/F/sphi/cphi) # 1/(Vy/Vx)*sigma_p/4.0/F
         dR_dcd = cphi/(Vy/Vx)*(sigma_p*(-cphi)/4.0/F/sphi/cphi) # -1/(Vy/Vx)*sigma_p*cphi/4.0/F/sphi
 
-        J['phi_sub', 'cl_sub'] = dR_dcl
-        J['phi_sub', 'cd_sub'] = dR_dcd
+        # J['phi_sub', 'cl_sub'] = dR_dcl
+        # J['phi_sub', 'cd_sub'] = dR_dcd
         # J['a_sub', 'phi_sub'] = da_dx[0]
         # J['a_sub', 'chord'] = da_dx[1]
         # J['a_sub', 'theta'] = da_dx[2]
@@ -442,6 +451,8 @@ class BEM(Component):
         # J['ap_sub', 'Rtip'] = dap_dx[7]
         # J['ap_sub', 'pitch'] = dap_dx[8]
 
+
+        J['phi_sub', 'cl_sub'] = 0.0
         return J
 
 class MUX(Component):
@@ -602,7 +613,7 @@ class CCEvaluate(Component):
         self.add_param('rho', shape=1)
         self.add_param('precone', shape=1)
         self.add_param('Rhub', shape=1)
-        self.add_param('nSector', shape=1)
+        self.add_param('nSector', val=4)
         self.add_param('rotorR', shape=1)
         for i in range(nSector):
             self.add_param('Np'+str(i+1), val=np.zeros(n))
@@ -640,7 +651,7 @@ class CCEvaluate(Component):
         n = self.n
         Np = {}
         Tp = {}
-        for i in range(8):
+        for i in range(nSector):
             Np['Np' + str(i+1)] = params['Np' + str(i+1)]
             Tp['Tp' + str(i+1)] = params['Tp' + str(i+1)]
         T = np.zeros(npts)
@@ -760,9 +771,9 @@ class CCEvaluate(Component):
         unknowns['T'] = T[0]
         unknowns['Q'] = Q[0]
 
-        self.dCP_drho = CP * rho
-        self.dCT_drho = CT * rho
-        self.dCQ_drho = CQ * rho
+        self.dCP_drho = -CP / rho
+        self.dCT_drho = -CT / rho
+        self.dCQ_drho = -CQ / rho
         self.dCP_drotorR = -2 * P / (q * pi * rotorR**3 * Uinf)
         self.dCT_drotorR = -2 * T / (q * pi * rotorR**3)
         self.dCQ_drotorR = -3 * Q / (q * pi * rotorR**4)
