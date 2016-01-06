@@ -28,6 +28,7 @@ import pyXLIGHT
 from naca_generator import naca4, naca5
 import cmath
 import mpmath
+from copy import deepcopy
 import os
 import sys
 # from scipy.interpolate import RectBivariateSpline
@@ -1262,7 +1263,218 @@ class Airfoil(object):
         return dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
     @classmethod
-    def xfoilGradients(self, CST, alpha, Re):
+    def xfoilGradients(self, CST, alpha, Re, FDorCS):
+
+        def cstComplex(alpha, Re, wl, wu, N, dz):
+            # wl = self.wl
+            # wu = self.wu
+            N = N
+            dz = dz
+
+            # Populate x coordinates
+            x = np.ones((N, 1), dtype=complex)
+            zeta = np.zeros((N, 1)) #, dtype=complex)
+            for z in range(0, N):
+                zeta[z] = 2.0 * pi / N * z
+                if z == N - 1:
+                    zeta[z] = 2.0 * pi
+                x[z] = 0.5*(cmath.cos(zeta[z])+1.0)
+
+            # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
+            N1 = 0.5
+            N2 = 1
+
+            try:
+                zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
+                zerind = zerind[0][0]
+            except:
+                zerind = N/2
+
+            xl = np.zeros(zerind, dtype=complex)
+            xu = np.zeros(N-zerind, dtype=complex)
+
+            for z in range(len(xl)):
+                xl[z] = x[z][0]        # Lower surface x-coordinates
+            for z in range(len(xu)):
+                xu[z] = x[z + zerind][0]   # Upper surface x-coordinates
+
+            yl = __ClassShapeComplex(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+            yu = __ClassShapeComplex(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+
+            y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
+            y = y[::-1]
+            # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
+            # coord = [x, y]
+            x1 = np.zeros(len(x), dtype=complex)
+            for k in range(len(x)):
+                x1[k] = x[k][0]
+            x = x1
+
+            basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
+            airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates_complex.dat'
+
+            coord_file = open(airfoil_shape_file, 'w')
+
+            print >> coord_file, 'CST'
+            for i in range(len(x)):
+                print >> coord_file, '{:<10f}\t{:<10f}'.format(x[i], y[i])
+
+            coord_file.close()
+
+            # read in coordinate file
+            with suppress_stdout_stderr():
+                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            airfoil.re = Re
+            airfoil.mach = 0.00
+            airfoil.iter = 1000
+
+            angle = alpha
+            cl, cd, cm, lexitflag = airfoil.solveAlphaComplex(angle)
+            if lexitflag:
+                cl = -10.0
+                cd = 0.0
+            return cl, cd
+            # error handling in case of XFOIL failure
+            # for k in range(len(cl)):
+            #     if cl[k] == -10.0:
+            #         if k == 0:
+            #             cl[k] = cl[k+1] - cl[k+2] + cl[k+1]
+            #             cd[k] = cd[k+1] - cd[k+2] + cd[k+1]
+            #         elif k == len(cl)-1:
+            #             cl[k] = cl[k-1] - cl[k-2] + cl[k-1]
+            #             cd[k] = cd[k-1] - cd[k-2] + cd[k-1]
+            #         else:
+            #             cl[k] = (cl[k+1] - cl[k-1])/2.0 + cl[k-1]
+            #             cd[k] = (cd[k+1] - cd[k-1])/2.0 + cd[k-1]
+            #     if cl[k] == -10.0 or cl[k] < -2. or cl[k] > 2. or cd[k] < 0.00001 or cd[k] > 0.5 or not np.isfinite(cd[k]) or not np.isfinite(cl[k]):
+            #         to_delete = np.append(to_delete, k)
+            # cl = np.delete(cl, to_delete)
+            # cd = np.delete(cd, to_delete)
+            # alphas = np.delete(alphas, to_delete)
+
+            # polars.append(polarType(Re, alphas, cl, cd, cm))
+        def __ClassShape(w, x, N1, N2, dz):
+
+            # Class function; taking input of N1 and N2
+            C = np.zeros(len(x))
+            for i in range(len(x)):
+                C[i] = x[i]**N1*((1-x[i])**N2)
+
+            # Shape function; using Bernstein Polynomials
+            n = len(w) - 1  # Order of Bernstein polynomials
+
+            K = np.zeros(n+1)
+            for i in range(0, n+1):
+                K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
+
+            S = np.zeros(len(x))
+            for i in range(len(x)):
+                S[i] = 0
+                for j in range(0, n+1):
+                    S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+
+            # Calculate y output
+            y = np.zeros(len(x))
+            for i in range(len(y)):
+                y[i] = C[i] * S[i] + x[i] * dz
+
+            return y
+
+        def __ClassShapeComplex(w, x, N1, N2, dz):
+
+            # Class function; taking input of N1 and N2
+            C = np.zeros(len(x), dtype=complex)
+            for i in range(len(x)):
+                C[i] = x[i]**N1*((1-x[i])**N2)
+
+            # Shape function; using Bernstein Polynomials
+            n = len(w) - 1  # Order of Bernstein polynomials
+
+            K = np.zeros(n+1, dtype=complex)
+            for i in range(0, n+1):
+                K[i] = mpmath.factorial(n)/(mpmath.factorial(i)*(mpmath.factorial((n)-(i))))
+
+            S = np.zeros(len(x), dtype=complex)
+            for i in range(len(x)):
+                S[i] = 0
+                for j in range(0, n+1):
+                    S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+
+            # Calculate y output
+            y = np.zeros(len(x), dtype=complex)
+            for i in range(len(y)):
+                y[i] = C[i] * S[i] + x[i] * dz
+
+            return y
+
+        def cstReal(alpha, Re, wl, wu, N, dz):
+
+            # Populate x coordinates
+            x = np.ones((N, 1))
+            zeta = np.zeros((N, 1))
+            for z in range(0, N):
+                zeta[z] = 2 * pi / N * z
+                if z == N - 1:
+                    zeta[z] = 2.0 * pi
+                x[z] = 0.5*(cos(zeta[z])+1.0)
+
+            # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
+            N1 = 0.5
+            N2 = 1
+
+            try:
+                zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
+                zerind = zerind[0][0]
+            except:
+                zerind = N/2
+
+            xl = np.zeros(zerind)
+            xu = np.zeros(N-zerind)
+
+            for z in range(len(xl)):
+                xl[z] = x[z]        # Lower surface x-coordinates
+            for z in range(len(xu)):
+                xu[z] = x[z + zerind]   # Upper surface x-coordinates
+
+            yl = __ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+            yu = __ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+
+            y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
+            y = y[::-1]
+            # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
+            # coord = [x, y]
+            x1 = np.zeros(len(x))
+            for k in range(len(x)):
+                x1[k] = x[k][0]
+            x = x1
+
+            basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
+            airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates.dat'
+
+            coord_file = open(airfoil_shape_file, 'w')
+
+            print >> coord_file, 'CST'
+            for i in range(len(x)):
+                print >> coord_file, '{:<10f}\t{:<10f}'.format(x[i], y[i])
+
+            coord_file.close()
+
+            # read in coordinate file
+            with suppress_stdout_stderr():
+                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            airfoil.re = Re
+            airfoil.mach = 0.00
+            airfoil.iter = 1000
+
+            angle = alpha
+            cl, cd, cm, lexitflag = airfoil.solveAlpha(angle)
+            if lexitflag:
+                cl = -10.0
+                cd = 0.0
+            return cl, cd
+
+
+
         n2 = 1
         n1 = len(CST)/2
         CST = np.array([CST])
@@ -1292,183 +1504,27 @@ class Airfoil(object):
         step_size = 1e-20
         cs_step = complex(0, step_size)
         dcl_dcst, dcd_dcst = np.zeros(8), np.zeros(8)
-        cl, cd = self.cstReal(alpha, Re, wl, wu)
+        cl, cd = cstReal(alpha, Re, wl, wu, N, dz)
 
         for i in range(len(wl)):
             wl_complex = wl.copy()
             wl_complex[i] += cs_step
-            cl_complex, cd_complex = self.cstComplex(alpha, Re, wl_complex, wu)
+            cl_complex, cd_complex = cstComplex(alpha, Re, wl_complex, wu, N, dz)
             dcl_dcst[i] = np.imag(cl_complex)/np.imag(cs_step)
             dcd_dcst[i] = np.imag(cd_complex)/np.imag(cs_step)
             wu_complex = wu.copy()
             wu_complex[i] += cs_step
-            cl_complex, cd_complex = self.cstComplex(alpha, Re, wl, wu_complex)
+            cl_complex, cd_complex = cstComplex(alpha, Re, wl, wu_complex, N, dz)
             dcl_dcst[i+4] = np.imag(cl_complex)/np.imag(cs_step)
             dcd_dcst[i+4] = np.imag(cd_complex)/np.imag(cs_step)
 
         return cl, cd, dcl_dcst, dcd_dcst
 
-    def cstComplex(self, alpha, Re, wl, wu):
-        # wl = self.wl
-        # wu = self.wu
-        N = self.N
-        dz = self.dz
 
-        # Populate x coordinates
-        x = np.ones((N, 1), dtype=complex)
-        zeta = np.zeros((N, 1)) #, dtype=complex)
-        for z in range(0, N):
-            zeta[z] = 2.0 * pi / N * z
-            if z == N - 1:
-                zeta[z] = 2.0 * pi
-            x[z] = 0.5*(cmath.cos(zeta[z])+1.0)
 
-        # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
-        N1 = 0.5
-        N2 = 1
-
-        try:
-            zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
-            zerind = zerind[0][0]
-        except:
-            zerind = N/2
-
-        xl = np.zeros(zerind, dtype=complex)
-        xu = np.zeros(N-zerind, dtype=complex)
-
-        for z in range(len(xl)):
-            xl[z] = x[z][0]        # Lower surface x-coordinates
-        for z in range(len(xu)):
-            xu[z] = x[z + zerind][0]   # Upper surface x-coordinates
-
-        yl = self.__ClassShapeComplex(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
-        yu = self.__ClassShapeComplex(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
-
-        y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
-        y = y[::-1]
-        # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
-        # coord = [x, y]
-        x1 = np.zeros(len(x), dtype=complex)
-        for k in range(len(x)):
-            x1[k] = x[k][0]
-        x = x1
-
-        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
-        airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates_complex.dat'
-
-        coord_file = open(airfoil_shape_file, 'w')
-
-        print >> coord_file, 'CST'
-        for i in range(len(x)):
-            print >> coord_file, '{:<10f}\t{:<10f}'.format(x[i], y[i])
-
-        coord_file.close()
-
-        # read in coordinate file
-        with suppress_stdout_stderr():
-            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
-        airfoil.re = Re
-        airfoil.mach = 0.00
-        airfoil.iter = 1000
-
-        angle = alpha
-        cl, cd, cm, lexitflag = airfoil.solveAlphaComplex(angle)
-        if lexitflag:
-            cl = -10.0
-            cd = 0.0
-        return cl, cd
-        # error handling in case of XFOIL failure
-        # for k in range(len(cl)):
-        #     if cl[k] == -10.0:
-        #         if k == 0:
-        #             cl[k] = cl[k+1] - cl[k+2] + cl[k+1]
-        #             cd[k] = cd[k+1] - cd[k+2] + cd[k+1]
-        #         elif k == len(cl)-1:
-        #             cl[k] = cl[k-1] - cl[k-2] + cl[k-1]
-        #             cd[k] = cd[k-1] - cd[k-2] + cd[k-1]
-        #         else:
-        #             cl[k] = (cl[k+1] - cl[k-1])/2.0 + cl[k-1]
-        #             cd[k] = (cd[k+1] - cd[k-1])/2.0 + cd[k-1]
-        #     if cl[k] == -10.0 or cl[k] < -2. or cl[k] > 2. or cd[k] < 0.00001 or cd[k] > 0.5 or not np.isfinite(cd[k]) or not np.isfinite(cl[k]):
-        #         to_delete = np.append(to_delete, k)
-        # cl = np.delete(cl, to_delete)
-        # cd = np.delete(cd, to_delete)
-        # alphas = np.delete(alphas, to_delete)
-
-        # polars.append(polarType(Re, alphas, cl, cd, cm))
-
-    def cstReal(self, alpha, Re, wl, wu):
-        # wl = self.wl
-        # wu = self.wu
-        N = self.N
-        dz = self.dz
-
-        # Populate x coordinates
-        x = np.ones((N, 1))
-        zeta = np.zeros((N, 1))
-        for z in range(0, N):
-            zeta[z] = 2 * pi / N * z
-            if z == N - 1:
-                zeta[z] = 2.0 * pi
-            x[z] = 0.5*(cos(zeta[z])+1.0)
-
-        # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
-        N1 = 0.5
-        N2 = 1
-
-        try:
-            zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
-            zerind = zerind[0][0]
-        except:
-            zerind = N/2
-
-        xl = np.zeros(zerind)
-        xu = np.zeros(N-zerind)
-
-        for z in range(len(xl)):
-            xl[z] = x[z]        # Lower surface x-coordinates
-        for z in range(len(xu)):
-            xu[z] = x[z + zerind]   # Upper surface x-coordinates
-
-        yl = self.__ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
-        yu = self.__ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
-
-        y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
-        y = y[::-1]
-        # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
-        # coord = [x, y]
-        x1 = np.zeros(len(x))
-        for k in range(len(x)):
-            x1[k] = x[k][0]
-        x = x1
-
-        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
-        airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates.dat'
-
-        coord_file = open(airfoil_shape_file, 'w')
-
-        print >> coord_file, 'CST'
-        for i in range(len(x)):
-            print >> coord_file, '{:<10f}\t{:<10f}'.format(x[i], y[i])
-
-        coord_file.close()
-
-        # read in coordinate file
-        with suppress_stdout_stderr():
-            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
-        airfoil.re = Re
-        airfoil.mach = 0.00
-        airfoil.iter = 1000
-
-        angle = alpha
-        cl, cd, cm, lexitflag = airfoil.solveAlpha(angle)
-        if lexitflag:
-            cl = -10.0
-            cd = 0.0
-        return cl, cd
 
     @classmethod
-    def cfdGradients(self, CST, alpha, Re):
+    def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS):
 
         import os, sys, shutil, copy
         sys.path.append(os.environ['SU2_RUN'])
@@ -1478,10 +1534,10 @@ class Airfoil(object):
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
         filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
         # filename = 'inv_NACA0012.cfg'
-        partitions = 0
+        partitions = processors
         compute = True
         step = 1e-4
-        iterations = 500
+        iterations = iterations
 
         # Config and state
         config = SU2.io.Config(filename)
@@ -1549,56 +1605,66 @@ class Airfoil(object):
 
         # return state
 
+        n = len(CST)
+        m = len(dcd_dx)
+        dcst_dx = np.zeros((n, m))
+        fd_step = 1e-6
+
+        wl_original = [-0.5, -0.5, -0.5, -0.5]
+        wu_original = [0.5, 0.5, 0.5, 0.5]
+        dz = 0.0
+        N = 200
+        coord_old = cst_to_coordinates(wl_original, wu_original, N, dz)
+
+        design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
+
         # Gradients
+        if FDorCS == 'FD':
 
-        x_old = [x1, x2, x3, x4, x5, x6, x7, x8]
-        fd_step = 1e-3
-        n = len(x_old)
-        m = 38
-
-        geometric_gradient = np.zeros((n, m))
-        wl_old = [x_old[0], x_old[1], x_old[2], x_old[3]]
-        wu_old = [x_old[4], x_old[5], x_old[6], x_old[7]]
-        design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
-        for i in range(0, n):
-            x_new = deepcopy(x_old)
-            x_new[i] += fd_step
-            wl_new = [x_new[0], x_new[1], x_new[2], x_new[3]]
-            wu_new = [x_new[4], x_new[5], x_new[6], x_new[7]]
-            airfoil_CST_new = CST_shape(wl_new, wu_new, dz, N)
-            airfoil_CST_old = CST_shape(wl_old, wu_old, dz, N)
-            coor_new = airfoil_CST_new.airfoil_coor()
-            coord_old = airfoil_CST_old.airfoil_coor()
-            j = 0
-            for coor_d in design:
-                if (coor_new[1][coor_d] - coord_old[1][coor_d]).real == 0:
-                    geometric_gradient[i][j] = 0
+            for i in range(0, n):
+                wl_new = deepcopy(wl_original)
+                wu_new = deepcopy(wu_original)
+                if i < n/2:
+                    wl_new[i] += fd_step
                 else:
-                    geometric_gradient[i][j] = 1/((coor_new[1][coor_d] - coord_old[1][coor_d]).real / fd_step)
-                j += 1
-        step_size = 1e-20
-        cs_step = complex(0, step_size)
+                    wu_new[i-4] += fd_step
+                coor_new = cst_to_coordinates(wl_new, wu_new, N, dz)
+                j = 0
+                for coor_d in design:
+                    if (coor_new[1][coor_d] - coord_old[1][coor_d]).real == 0:
+                        dcst_dx[i][j] = 0
+                    else:
+                        dcst_dx[i][j] = 1/((coor_new[1][coor_d] - coord_old[1][coor_d]).real / fd_step)
+                    j += 1
 
-        geometric_gradient = np.zeros((n, m))
-        wl_old = [x_old[0], x_old[1], x_old[2], x_old[3]]
-        wu_old = [x_old[4], x_old[5], x_old[6], x_old[7]]
-        design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
-        for i in range(0, n):
-            x_new = deepcopy(x_old)
-            x_new[i] += cs_step
-            wl_new = [x_new[0], x_new[1], x_new[2], x_new[3]]
-            wu_new = [x_new[4], x_new[5], x_new[6], x_new[7]]
-            airfoil_CST_new = CST_shape(wl_new, wu_new, dz, N)
-            airfoil_CST_old = CST_shape(wl_old, wu_old, dz, N)
-            coor_new = airfoil_CST_new.airfoil_coor()
-            coord_old = airfoil_CST_old.airfoil_coor()
-            j = 0
-            for coor_d in design:
-                if coor_new[1][coor_d].imag == 0:
-                    geometric_gradient[i][j] = 0
+        elif FDorCS == 'CS':
+            step_size = 1e-20
+            cs_step = complex(0, step_size)
+
+            for i in range(0, n):
+                wl_new = deepcopy(wl_original)
+                wu_new = deepcopy(wu_original)
+                if i >= n/2:
+                    wl_new[i] += cs_step
                 else:
-                    geometric_gradient[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
-                j += 1
+                    wu_new[i+4] += fd_step
+                coor_new = cst_to_coordinates(wl_new, wu_new, N, dz)
+                j = 0
+                for coor_d in design:
+                    if coor_new[1][coor_d].imag == 0:
+                        dcst_dx[i][j] = 0
+                    else:
+                        dcst_dx[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
+                    j += 1
+        dcl_dx = np.zeros((38)) #,1))
+
+        dcst_dx = np.matrix(dcst_dx)
+        dcl_dx = np.matrix(dcl_dx)
+        dcd_dx = np.matrix(dcd_dx)
+
+        dcl_dcst = dcst_dx * dcl_dx.T
+        dcd_dcst = dcst_dx * dcd_dx.T
+
         return cl, cd, dcl_dcst, dcd_dcst
 
     def plot(self, single_figure=True):
@@ -1683,6 +1749,141 @@ class Airfoil(object):
                 ax.legend(loc='best')
         plt.show()
         return figs
+
+def cst_to_coordinates(wl, wu, N, dz):
+    x = np.ones((N, 1))
+    zeta = np.zeros((N, 1))
+    for z in range(0, N):
+        zeta[z] = 2 * pi / N * z
+        if z == N - 1:
+            zeta[z] = 2.0 * pi
+        x[z] = 0.5*(cos(zeta[z])+1.0)
+
+    # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
+    N1 = 0.5
+    N2 = 1
+
+    try:
+        zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
+        zerind = zerind[0][0]
+    except:
+        zerind = N/2
+
+    xl = np.zeros(zerind)
+    xu = np.zeros(N-zerind)
+
+    for z in range(len(xl)):
+        xl[z] = x[z]        # Lower surface x-coordinates
+    for z in range(len(xu)):
+        xu[z] = x[z + zerind]   # Upper surface x-coordinates
+
+    yl = __ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+    yu = __ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+
+    y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
+    y = y[::-1]
+    # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
+    # coord = [x, y]
+    x1 = np.zeros(len(x))
+    for k in range(len(x)):
+        x1[k] = x[k][0]
+    x = x1
+    return [x, y]
+
+def cst_to_coordinates_complex(wl, wu, N, dz):
+    # Populate x coordinates
+    x = np.ones((N, 1), dtype=complex)
+    zeta = np.zeros((N, 1)) #, dtype=complex)
+    for z in range(0, N):
+        zeta[z] = 2.0 * pi / N * z
+        if z == N - 1:
+            zeta[z] = 2.0 * pi
+        x[z] = 0.5*(cmath.cos(zeta[z])+1.0)
+
+    # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
+    N1 = 0.5
+    N2 = 1
+
+    try:
+        zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
+        zerind = zerind[0][0]
+    except:
+        zerind = N/2
+
+    xl = np.zeros(zerind, dtype=complex)
+    xu = np.zeros(N-zerind, dtype=complex)
+
+    for z in range(len(xl)):
+        xl[z] = x[z][0]        # Lower surface x-coordinates
+    for z in range(len(xu)):
+        xu[z] = x[z + zerind][0]   # Upper surface x-coordinates
+
+    yl = __ClassShapeComplex(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+    yu = __ClassShapeComplex(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+
+    y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
+    y = y[::-1]
+    # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
+    # coord = [x, y]
+    x1 = np.zeros(len(x), dtype=complex)
+    for k in range(len(x)):
+        x1[k] = x[k][0]
+    x = x1
+    return [x, y]
+
+def __ClassShape(w, x, N1, N2, dz):
+
+    # Class function; taking input of N1 and N2
+    C = np.zeros(len(x))
+    for i in range(len(x)):
+        C[i] = x[i]**N1*((1-x[i])**N2)
+
+    # Shape function; using Bernstein Polynomials
+    n = len(w) - 1  # Order of Bernstein polynomials
+
+    K = np.zeros(n+1)
+    for i in range(0, n+1):
+        K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
+
+    S = np.zeros(len(x))
+    for i in range(len(x)):
+        S[i] = 0
+        for j in range(0, n+1):
+            S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+
+    # Calculate y output
+    y = np.zeros(len(x))
+    for i in range(len(y)):
+        y[i] = C[i] * S[i] + x[i] * dz
+
+    return y
+
+def __ClassShapeComplex(w, x, N1, N2, dz):
+
+    # Class function; taking input of N1 and N2
+    C = np.zeros(len(x), dtype=complex)
+    for i in range(len(x)):
+        C[i] = x[i]**N1*((1-x[i])**N2)
+
+    # Shape function; using Bernstein Polynomials
+    n = len(w) - 1  # Order of Bernstein polynomials
+
+    K = np.zeros(n+1, dtype=complex)
+    for i in range(0, n+1):
+        K[i] = mpmath.factorial(n)/(mpmath.factorial(i)*(mpmath.factorial((n)-(i))))
+
+    S = np.zeros(len(x), dtype=complex)
+    for i in range(len(x)):
+        S[i] = 0
+        for j in range(0, n+1):
+            S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+
+    # Calculate y output
+    y = np.zeros(len(x), dtype=complex)
+    for i in range(len(y)):
+        y[i] = C[i] * S[i] + x[i] * dz
+
+    return y
 
     # def evaluate(self, alpha, Re):
     #     """Get lift/drag coefficient at the specified angle of attack and Reynolds number
