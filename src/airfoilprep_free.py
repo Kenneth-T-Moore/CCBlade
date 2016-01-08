@@ -31,6 +31,7 @@ import mpmath
 from copy import deepcopy
 import os
 import sys
+import subprocess
 # from scipy.interpolate import RectBivariateSpline
 
 
@@ -1265,7 +1266,7 @@ class Airfoil(object):
     @classmethod
     def xfoilGradients(self, CST, alpha, Re, FDorCS):
 
-        def cstComplex(alpha, Re, wl, wu, N, dz):
+        def cstComplex(alpha, Re, wl, wu, N, dz, Uinf):
             # wl = self.wl
             # wu = self.wu
             N = N
@@ -1325,7 +1326,7 @@ class Airfoil(object):
             with suppress_stdout_stderr():
                 airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
             airfoil.re = Re
-            airfoil.mach = 0.00
+            airfoil.mach = Uinf / 340.29
             airfoil.iter = 1000
 
             angle = alpha
@@ -1407,7 +1408,7 @@ class Airfoil(object):
 
             return y
 
-        def cstReal(alpha, Re, wl, wu, N, dz):
+        def cstReal(alpha, Re, wl, wu, N, dz, Uinf):
 
             # Populate x coordinates
             x = np.ones((N, 1))
@@ -1463,7 +1464,7 @@ class Airfoil(object):
             with suppress_stdout_stderr():
                 airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
             airfoil.re = Re
-            airfoil.mach = 0.00
+            airfoil.mach = Uinf / 340.29
             airfoil.iter = 1000
 
             angle = alpha
@@ -1504,7 +1505,7 @@ class Airfoil(object):
         step_size = 1e-20
         cs_step = complex(0, step_size)
         dcl_dcst, dcd_dcst = np.zeros(8), np.zeros(8)
-        cl, cd = cstReal(alpha, Re, wl, wu, N, dz)
+        cl, cd = cstReal(alpha, Re, wl, wu, N, dz, Uinf=10.0)
 
         for i in range(len(wl)):
             wl_complex = wl.copy()
@@ -1524,15 +1525,126 @@ class Airfoil(object):
 
 
     @classmethod
-    def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS):
+    def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS, Uinf):
+
+        def __ClassShape(w, x, N1, N2, dz):
+
+            # Class function; taking input of N1 and N2
+            C = np.zeros(len(x))
+            for i in range(len(x)):
+                C[i] = x[i]**N1*((1-x[i])**N2)
+
+            # Shape function; using Bernstein Polynomials
+            n = len(w) - 1  # Order of Bernstein polynomials
+
+            K = np.zeros(n+1)
+            for i in range(0, n+1):
+                K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
+
+            S = np.zeros(len(x))
+            for i in range(len(x)):
+                S[i] = 0
+                for j in range(0, n+1):
+                    S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+
+            # Calculate y output
+            y = np.zeros(len(x))
+            for i in range(len(y)):
+                y[i] = C[i] * S[i] + x[i] * dz
+
+            return y
 
         import os, sys, shutil, copy
         sys.path.append(os.environ['SU2_RUN'])
         import SU2
 
+        n2 = 1
+        n1 = len(CST)/2
+        CST = np.array([CST])
+        for i in range(n2):
+            wu = np.zeros(n1)
+            wl = np.zeros(n1)
+            for j in range(n1):
+                wu[j] = CST[i][j]
+                wl[j] = CST[i][j + n1]
+            # wu, wl = np.split(af_parameters[i], 2)
+            w1 = np.average(wl)
+            w2 = np.average(wu)
+            if w1 < w2:
+                pass
+            else:
+                higher = wl
+                lower = wu
+                wl = lower
+                wu = higher
+            N = 120
+            dz = 0.
+
+        # Populate x coordinates
+        x = np.ones((N, 1))
+        zeta = np.zeros((N, 1))
+        for z in range(0, N):
+            zeta[z] = 2 * pi / N * z
+            if z == N - 1:
+                zeta[z] = 2.0 * pi
+            x[z] = 0.5*(cos(zeta[z])+1.0)
+
+        # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
+        N1 = 0.5
+        N2 = 1
+
+        try:
+            zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
+            zerind = zerind[0][0]
+        except:
+            zerind = N/2
+
+        xl = np.zeros(zerind)
+        xu = np.zeros(N-zerind)
+
+        for z in range(len(xl)):
+            xl[z] = x[z]        # Lower surface x-coordinates
+        for z in range(len(xu)):
+            xu[z] = x[z + zerind]   # Upper surface x-coordinates
+
+        yl = __ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+        yu = __ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+
+        y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
+        y = y[::-1]
+        # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
+        # coord = [x, y]
+        x1 = np.zeros(len(x))
+        for k in range(len(x)):
+            x1[k] = x[k][0]
+        x = x1
+
+        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'SU2_EDU/bin')
+        airfoil_shape_file = basepath + os.path.sep + 'airfoil_shape.dat'
+
+        coord_file = open(airfoil_shape_file, 'w')
+
+        print >> coord_file, 'CST'
+        for i in range(len(x)):
+            print >> coord_file, '{:<10f}\t{:<10f}'.format(x[i], y[i])
+
+        coord_file.close()
+
+
+        ## Update mesh for specific airfoil (mesh deformation in SU2_EDU)
+        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'SU2_EDU/bin')
+        su2_file_execute = basepath + os.path.sep + 'SU2_EDU'
+
+        savedPath = os.getcwd()
+        os.chdir(basepath)
+        subprocess.call([su2_file_execute])
+        os.chdir(savedPath)
+
+
         # filename = 'free_form_config.cfg'
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
         filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
+
         # filename = 'inv_NACA0012.cfg'
         partitions = processors
         compute = True
@@ -1545,19 +1657,33 @@ class Airfoil(object):
         config.NUMBER_PART = partitions
         config.EXT_ITER    = iterations
 
+        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'SU2_EDU/bin')
+        mesh_filename = basepath + os.path.sep + 'mesh_AIRFOIL.su2'
+
+        config.MESH_FILENAME = mesh_filename
         # find solution files if they exist
         state.find_files(config)
 
-        konfig = copy.deepcopy(config)
-        ztate  = copy.deepcopy(state)
-
-        konfig.AoA = np.degrees(alpha)
-        konfig.MACH_NUMBER = 0.05
+        config.AoA = np.degrees(alpha)
+        Ma = Uinf / 340.29  # Speed of sound at sea level
+        config.MACH_NUMBER = Ma
         #TODO : ADD REYNOLDS NUMBER
 
-        cd = SU2.eval.func('DRAG', konfig, ztate)
-        cl = SU2.eval.func('LIFT', konfig, ztate)
-        cm = SU2.eval.func('MOMENT_Z', konfig, ztate)
+        cd = SU2.eval.func('DRAG', config, state)
+        cl = SU2.eval.func('LIFT', config, state)
+        cm = SU2.eval.func('MOMENT_Z', config, state)
+
+        # konfig = copy.deepcopy(config)
+        # ztate  = copy.deepcopy(state)
+
+        # konfig.AoA = np.degrees(alpha)
+        # Ma = Uinf / 340.29  # Speed of sound at sea level
+        # konfig.MACH_NUMBER = Ma
+        # #TODO : ADD REYNOLDS NUMBER
+        #
+        # cd = SU2.eval.func('DRAG', konfig, ztate)
+        # cl = SU2.eval.func('LIFT', konfig, ztate)
+        # cm = SU2.eval.func('MOMENT_Z', konfig, ztate)
 
         # # check for existing files
         # if not compute:
@@ -1587,20 +1713,28 @@ class Airfoil(object):
         # adjoint_gradient_cl = get_gradients.get('LIFT')
 
         # Adjoint Solution
-        dcl_dcst = np.zeros(8)
-        dcd_dcst = np.zeros(8)
 
+        # RUN FOR DRAG GRADIENTS
         info = SU2.run.adjoint(config)
         state.update(info)
         #SU2.io.restart2solution(config,state)
-
         # Gradient Projection
         info = SU2.run.projection(config,step)
         state.update(info)
+        get_gradients = info.get('GRADIENTS')
+        dcd_dx = get_gradients.get('DRAG')
 
+        # RUN FOR LIFT GRADIENTS
+        config.OBJECTIVE_FUNCTION = 'LIFT'
+        info = SU2.run.adjoint(config)
+        state.update(info)
+        #SU2.io.restart2solution(config,state)
+        # Gradient Projection
+        info = SU2.run.projection(config,step)
+        state.update(info)
         get_gradients = info.get('GRADIENTS')
         dcl_dx = get_gradients.get('LIFT')
-        dcd_dx = get_gradients.get('DRAG')
+
 
 
         # return state
@@ -1656,7 +1790,7 @@ class Airfoil(object):
                     else:
                         dcst_dx[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
                     j += 1
-        dcl_dx = np.zeros((38)) #,1))
+        # dcl_dx = np.zeros((38)) #,1))
 
         dcst_dx = np.matrix(dcst_dx)
         dcl_dx = np.matrix(dcl_dx)
