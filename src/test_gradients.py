@@ -90,6 +90,19 @@ class TestGradientsPower_Loads(TestGradientsClass):
         bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
         n = len(r)
 
+        rotor = ccblade.CCBlade(r, chord, theta, af, Rhub, Rtip,
+            B, rho, mu, precone, tilt, yaw, shearExp,
+            hubHt, nSector, derivatives=True)
+
+        Np, Tp, self.dNp, self.dTp \
+            = rotor.distributedAeroLoads(Uinf, Omega, pitch, azimuth)
+
+        P, T, Q, self.dP, self.dT, self.dQ \
+            = rotor.evaluate([Uinf], [Omega], [pitch], coefficient=False)
+
+        CP, CT, CQ, self.dCP, self.dCT, self.dCQ \
+            = rotor.evaluate([Uinf], [Omega], [pitch], coefficient=True)
+
         ## Load gradients
         loads = Problem()
         root = loads.root = LoadsGroup(n)
@@ -150,18 +163,7 @@ class TestGradientsPower_Loads(TestGradientsClass):
         self.n = len(r)
         self.npts = 1  # len(Uinf)
 
-        rotor = ccblade.CCBlade(r, chord, theta, af, Rhub, Rtip,
-            B, rho, mu, precone, tilt, yaw, shearExp,
-            hubHt, nSector, derivatives=True)
 
-        Np, Tp, self.dNp, self.dTp \
-            = rotor.distributedAeroLoads(Uinf, Omega, pitch, azimuth)
-
-        P, T, Q, self.dP, self.dT, self.dQ \
-            = rotor.evaluate([Uinf], [Omega], [pitch], coefficient=False)
-
-        CP, CT, CQ, self.dCP, self.dCT, self.dCQ \
-            = rotor.evaluate([Uinf], [Omega], [pitch], coefficient=True)
 
 
 
@@ -169,8 +171,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
         dNp_dr = self.loads_gradients['Np', 'r']
         dTp_dr = self.loads_gradients['Tp', 'r']
-        dNp_dr_abs = self.dNp['r']
-        dTp_dr_abs = self.dTp['r']
+        dNp_dr_abs = self.dNp['dr']
+        dTp_dr_abs = self.dTp['dr']
 
         np.testing.assert_allclose(dNp_dr_abs, dNp_dr, rtol=1e-4, atol=1e-8)
         np.testing.assert_allclose(dTp_dr_abs, dTp_dr, rtol=1e-4, atol=1e-8)
@@ -181,9 +183,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dT_dr = self.power_gradients['T', 'r']
         dQ_dr = self.power_gradients['Q', 'r']
         dP_dr = self.power_gradients['P', 'r']
-        dT_dr_abs = self.dT['r']
-        dQ_dr_abs = self.dQ['r']
-        dP_dr_abs = self.dP['r']
+        dT_dr_abs = self.dT['dr']
+        dQ_dr_abs = self.dQ['dr']
+        dP_dr_abs = self.dP['dr']
 
 
         np.testing.assert_allclose(dT_dr_abs, dT_dr, rtol=5e-5, atol=1e-8)
@@ -196,9 +198,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCT_dr = self.power_gradients['CT', 'r']
         dCQ_dr = self.power_gradients['CQ', 'r']
         dCP_dr = self.power_gradients['CP', 'r']
-        dCT_dr_abs = self.dCT['r']
-        dCQ_dr_abs = self.dCQ['r']
-        dCP_dr_abs = self.dCP['r']
+        dCT_dr_abs = self.dCT['dr']
+        dCQ_dr_abs = self.dCQ['dr']
+        dCP_dr_abs = self.dCP['dr']
 
         np.testing.assert_allclose(dCT_dr_abs, dCT_dr, rtol=5e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dr_abs, dCQ_dr, rtol=3e-4, atol=1e-8)
@@ -210,8 +212,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
         dNp_dchord = self.loads_gradients['Np', 'chord']
         dTp_dchord = self.loads_gradients['Tp', 'chord']
-        dNp_dchord_abs = self.dNp['chord']
-        dTp_dchord_abs = self.dTp['chord']
+        dNp_dchord_abs = self.dNp['dchord']
+        dTp_dchord_abs = self.dTp['dchord']
 
         np.testing.assert_allclose(dNp_dchord_abs, dNp_dchord, rtol=1e-6, atol=1e-8)
         np.testing.assert_allclose(dTp_dchord_abs, dTp_dchord, rtol=5e-5, atol=1e-8)
@@ -223,9 +225,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dT_dchord = self.power_gradients['T', 'chord']
         dQ_dchord = self.power_gradients['Q', 'chord']
         dP_dchord = self.power_gradients['P', 'chord']
-        dT_dchord_abs = self.dT['chord']
-        dQ_dchord_abs = self.dQ['chord']
-        dP_dchord_abs = self.dP['chord']
+        dT_dchord_abs = self.dT['dchord']
+        dQ_dchord_abs = self.dQ['dchord']
+        dP_dchord_abs = self.dP['dchord']
 
         np.testing.assert_allclose(dT_dchord_abs, dT_dchord, rtol=5e-6, atol=1e-8)
         np.testing.assert_allclose(dQ_dchord_abs, dQ_dchord, rtol=7e-5, atol=1e-8)
@@ -236,9 +238,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCT_dchord = self.power_gradients['CT', 'chord']
         dCQ_dchord = self.power_gradients['CQ', 'chord']
         dCP_dchord = self.power_gradients['CP', 'chord']
-        dCT_dchord_abs = self.dCT['chord']
-        dCQ_dchord_abs = self.dCQ['chord']
-        dCP_dchord_abs = self.dCP['chord']
+        dCT_dchord_abs = self.dCT['dchord']
+        dCQ_dchord_abs = self.dCQ['dchord']
+        dCP_dchord_abs = self.dCP['dchord']
 
         np.testing.assert_allclose(dCT_dchord_abs, dCT_dchord, rtol=5e-6, atol=1e-8)
         np.testing.assert_allclose(dCQ_dchord_abs, dCQ_dchord, rtol=7e-5, atol=1e-8)
@@ -249,10 +251,10 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dtheta1(self):
 
-        dNp_dtheta = self.loads_gradients['Np', 'theta']
-        dTp_dtheta = self.loads_gradients['Tp', 'theta']
-        dNp_dtheta_abs = self.dNp['theta']
-        dTp_dtheta_abs = self.dTp['theta']
+        dNp_dtheta = np.radians(self.loads_gradients['Np', 'theta'])
+        dTp_dtheta = np.radians(self.loads_gradients['Tp', 'theta'])
+        dNp_dtheta_abs = self.dNp['dtheta']
+        dTp_dtheta_abs = self.dTp['dtheta']
 
         np.testing.assert_allclose(dNp_dtheta_abs, dNp_dtheta, rtol=1e-6, atol=1e-8)
         np.testing.assert_allclose(dTp_dtheta_abs, dTp_dtheta, rtol=1e-4, atol=1e-8)
@@ -260,12 +262,12 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dtheta2(self):
 
-        dT_dtheta = self.power_gradients['T', 'theta']
-        dQ_dtheta = self.power_gradients['Q', 'theta']
-        dP_dtheta = self.power_gradients['P', 'theta']
-        dT_dtheta_abs = self.dT['theta']
-        dQ_dtheta_abs = self.dQ['theta']
-        dP_dtheta_abs = self.dP['theta']
+        dT_dtheta = np.radians(self.power_gradients['T', 'theta'])
+        dQ_dtheta = np.radians(self.power_gradients['Q', 'theta'])
+        dP_dtheta = np.radians(self.power_gradients['P', 'theta'])
+        dT_dtheta_abs = self.dT['dtheta']
+        dQ_dtheta_abs = self.dQ['dtheta']
+        dP_dtheta_abs = self.dP['dtheta']
 
         np.testing.assert_allclose(dT_dtheta_abs, dT_dtheta, rtol=7e-4, atol=1e-6) # TODO: rtol=7e-5, atol=1e-8
         np.testing.assert_allclose(dQ_dtheta_abs, dQ_dtheta, rtol=7e-4, atol=1e-6)
@@ -275,12 +277,12 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dtheta3(self):
 
-        dCT_dtheta = self.power_gradients['CT', 'theta']
-        dCQ_dtheta = self.power_gradients['CQ', 'theta']
-        dCP_dtheta = self.power_gradients['CP', 'theta']
-        dCT_dtheta_abs = self.dCT['theta']
-        dCQ_dtheta_abs = self.dCQ['theta']
-        dCP_dtheta_abs = self.dCP['theta']
+        dCT_dtheta = np.radians(self.power_gradients['CT', 'theta'])
+        dCQ_dtheta = np.radians(self.power_gradients['CQ', 'theta'])
+        dCP_dtheta = np.radians(self.power_gradients['CP', 'theta'])
+        dCT_dtheta_abs = self.dCT['dtheta']
+        dCQ_dtheta_abs = self.dCQ['dtheta']
+        dCP_dtheta_abs = self.dCP['dtheta']
 
         np.testing.assert_allclose(dCT_dtheta_abs, dCT_dtheta, rtol=5e-6, atol=1e-8)
         np.testing.assert_allclose(dCQ_dtheta_abs, dCQ_dtheta, rtol=7e-5, atol=1e-8)
@@ -293,8 +295,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dNp_dRhub = self.loads_gradients['Np', 'Rhub']
         dTp_dRhub = self.loads_gradients['Tp', 'Rhub']
 
-        dNp_dRhub_abs = self.dNp['Rhub']
-        dTp_dRhub_abs = self.dTp['Rhub']
+        dNp_dRhub_abs = self.dNp['dRhub']
+        dTp_dRhub_abs = self.dTp['dRhub']
 
         np.testing.assert_allclose(dNp_dRhub_abs, dNp_dRhub, rtol=1e-5, atol=1.5e-6) # TODO
         np.testing.assert_allclose(dTp_dRhub_abs, dTp_dRhub, rtol=1e-4, atol=1.5e-6)
@@ -306,9 +308,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dQ_dRhub = self.power_gradients['Q', 'Rhub']
         dP_dRhub = self.power_gradients['P', 'Rhub']
 
-        dT_dRhub_abs = self.dT['Rhub']
-        dQ_dRhub_abs = self.dQ['Rhub']
-        dP_dRhub_abs = self.dP['Rhub']
+        dT_dRhub_abs = self.dT['dRhub']
+        dQ_dRhub_abs = self.dQ['dRhub']
+        dP_dRhub_abs = self.dP['dRhub']
 
         np.testing.assert_allclose(dT_dRhub_abs, dT_dRhub, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dRhub_abs, dQ_dRhub, rtol=5e-5, atol=1e-8)
@@ -321,9 +323,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCQ_dRhub = self.power_gradients['CQ', 'Rhub']
         dCP_dRhub = self.power_gradients['CP', 'Rhub']
 
-        dCT_dRhub_abs = self.dCT['Rhub']
-        dCQ_dRhub_abs = self.dCQ['Rhub']
-        dCP_dRhub_abs = self.dCP['Rhub']
+        dCT_dRhub_abs = self.dCT['dRhub']
+        dCQ_dRhub_abs = self.dCQ['dRhub']
+        dCP_dRhub_abs = self.dCP['dRhub']
 
         np.testing.assert_allclose(dCT_dRhub_abs, dCT_dRhub, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dRhub_abs, dCQ_dRhub, rtol=5e-5, atol=1e-8)
@@ -335,8 +337,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dNp_dRtip = self.loads_gradients['Np', 'Rtip']
         dTp_dRtip = self.loads_gradients['Tp', 'Rtip']
 
-        dNp_dRtip_abs = self.dNp['Rtip']
-        dTp_dRtip_abs = self.dTp['Rtip']
+        dNp_dRtip_abs = self.dNp['dRtip']
+        dTp_dRtip_abs = self.dTp['dRtip']
 
         np.testing.assert_allclose(dNp_dRtip_abs, dNp_dRtip, rtol=1e-4, atol=1e-8)
         np.testing.assert_allclose(dTp_dRtip_abs, dTp_dRtip, rtol=1e-4, atol=1e-8)
@@ -348,9 +350,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dQ_dRtip = self.power_gradients['Q', 'Rtip']
         dP_dRtip = self.power_gradients['P', 'Rtip']
 
-        dT_dRtip_abs = self.dT['Rtip']
-        dQ_dRtip_abs = self.dQ['Rtip']
-        dP_dRtip_abs = self.dP['Rtip']
+        dT_dRtip_abs = self.dT['dRtip']
+        dQ_dRtip_abs = self.dQ['dRtip']
+        dP_dRtip_abs = self.dP['dRtip']
 
         np.testing.assert_allclose(dT_dRtip_abs, dT_dRtip, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dRtip_abs, dQ_dRtip, rtol=5e-5, atol=1e-8)
@@ -363,9 +365,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCQ_dRtip = self.power_gradients['CQ', 'Rtip']
         dCP_dRtip = self.power_gradients['CP', 'Rtip']
 
-        dCT_dRtip_abs = self.dCT['Rtip']
-        dCQ_dRtip_abs = self.dCQ['Rtip']
-        dCP_dRtip_abs = self.dCP['Rtip']
+        dCT_dRtip_abs = self.dCT['dRtip']
+        dCQ_dRtip_abs = self.dCQ['dRtip']
+        dCP_dRtip_abs = self.dCP['dRtip']
 
         np.testing.assert_allclose(dCT_dRtip_abs, dCT_dRtip, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dRtip_abs, dCQ_dRtip, rtol=5e-5, atol=1e-8)
@@ -374,11 +376,11 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dprecone1(self):
 
-        dNp_dprecone = self.loads_gradients['Np', 'precone']
-        dTp_dprecone = self.loads_gradients['Tp', 'precone']
+        dNp_dprecone = np.radians(self.loads_gradients['Np', 'precone'])
+        dTp_dprecone = np.radians(self.loads_gradients['Tp', 'precone'])
 
-        dNp_dprecone_abs = self.dNp['precone']
-        dTp_dprecone_abs = self.dTp['precone']
+        dNp_dprecone_abs = self.dNp['dprecone']
+        dTp_dprecone_abs = self.dTp['dprecone']
 
         np.testing.assert_allclose(dNp_dprecone_abs, dNp_dprecone, rtol=1e-5, atol=1e-7)
         np.testing.assert_allclose(dTp_dprecone_abs, dTp_dprecone, rtol=1e-5, atol=1e-7)
@@ -387,13 +389,13 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dprecone2(self):
 
-        dT_dprecone = self.power_gradients['T', 'precone']
-        dQ_dprecone = self.power_gradients['Q', 'precone']
-        dP_dprecone = self.power_gradients['P', 'precone']
+        dT_dprecone = np.radians(self.power_gradients['T', 'precone'])
+        dQ_dprecone = np.radians(self.power_gradients['Q', 'precone'])
+        dP_dprecone = np.radians(self.power_gradients['P', 'precone'])
 
-        dT_dprecone_abs = self.dT['precone']
-        dQ_dprecone_abs = self.dQ['precone']
-        dP_dprecone_abs = self.dP['precone']
+        dT_dprecone_abs = self.dT['dprecone']
+        dQ_dprecone_abs = self.dQ['dprecone']
+        dP_dprecone_abs = self.dP['dprecone']
 
         np.testing.assert_allclose(dT_dprecone_abs, dT_dprecone, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dprecone_abs, dQ_dprecone, rtol=5e-5, atol=1e-8)
@@ -402,13 +404,13 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dprecone3(self):
 
-        dCT_dprecone = self.power_gradients['CT', 'precone']
-        dCQ_dprecone = self.power_gradients['CQ', 'precone']
-        dCP_dprecone = self.power_gradients['CP', 'precone']
+        dCT_dprecone = np.radians(self.power_gradients['CT', 'precone'])
+        dCQ_dprecone = np.radians(self.power_gradients['CQ', 'precone'])
+        dCP_dprecone = np.radians(self.power_gradients['CP', 'precone'])
 
-        dCT_dprecone_abs = self.dCT['precone']
-        dCQ_dprecone_abs = self.dCQ['precone']
-        dCP_dprecone_abs = self.dCP['precone']
+        dCT_dprecone_abs = self.dCT['dprecone']
+        dCQ_dprecone_abs = self.dCQ['dprecone']
+        dCP_dprecone_abs = self.dCP['dprecone']
 
         np.testing.assert_allclose(dCT_dprecone_abs, dCT_dprecone, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dprecone_abs, dCQ_dprecone, rtol=5e-5, atol=1e-8)
@@ -417,11 +419,11 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dtilt1(self):
 
-        dNp_dtilt = self.loads_gradients['Np', 'tilt']
-        dTp_dtilt = self.loads_gradients['Tp', 'tilt']
+        dNp_dtilt = np.radians(self.loads_gradients['Np', 'tilt'])
+        dTp_dtilt = np.radians(self.loads_gradients['Tp', 'tilt'])
 
-        dNp_dtilt_abs = self.dNp['tilt']
-        dTp_dtilt_abs = self.dTp['tilt']
+        dNp_dtilt_abs = self.dNp['dtilt']
+        dTp_dtilt_abs = self.dTp['dtilt']
 
         np.testing.assert_allclose(dNp_dtilt_abs, dNp_dtilt, rtol=1e-6, atol=1e-8)
         np.testing.assert_allclose(dTp_dtilt_abs, dTp_dtilt, rtol=1e-5, atol=1e-8)
@@ -429,13 +431,13 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dtilt2(self):
 
-        dT_dtilt = self.power_gradients['T', 'tilt']
-        dQ_dtilt = self.power_gradients['Q', 'tilt']
-        dP_dtilt = self.power_gradients['P', 'tilt']
+        dT_dtilt = np.radians(self.power_gradients['T', 'tilt'])
+        dQ_dtilt = np.radians(self.power_gradients['Q', 'tilt'])
+        dP_dtilt = np.radians(self.power_gradients['P', 'tilt'])
 
-        dT_dtilt_abs = self.dT['tilt']
-        dQ_dtilt_abs = self.dQ['tilt']
-        dP_dtilt_abs = self.dP['tilt']
+        dT_dtilt_abs = self.dT['dtilt']
+        dQ_dtilt_abs = self.dQ['dtilt']
+        dP_dtilt_abs = self.dP['dtilt']
 
         np.testing.assert_allclose(dT_dtilt_abs, dT_dtilt, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dtilt_abs, dQ_dtilt, rtol=5e-5, atol=1e-8)
@@ -444,13 +446,13 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dtilt3(self):
 
-        dCT_dtilt = self.power_gradients['CT', 'tilt']
-        dCQ_dtilt = self.power_gradients['CQ', 'tilt']
-        dCP_dtilt = self.power_gradients['CP', 'tilt']
+        dCT_dtilt = np.radians(self.power_gradients['CT', 'tilt'])
+        dCQ_dtilt = np.radians(self.power_gradients['CQ', 'tilt'])
+        dCP_dtilt = np.radians(self.power_gradients['CP', 'tilt'])
 
-        dCT_dtilt_abs = self.dCT['tilt']
-        dCQ_dtilt_abs = self.dCQ['tilt']
-        dCP_dtilt_abs = self.dCP['tilt']
+        dCT_dtilt_abs = self.dCT['dtilt']
+        dCQ_dtilt_abs = self.dCQ['dtilt']
+        dCP_dtilt_abs = self.dCP['dtilt']
 
         np.testing.assert_allclose(dCT_dtilt_abs, dCT_dtilt, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dtilt_abs, dCQ_dtilt, rtol=5e-5, atol=1e-8)
@@ -462,8 +464,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dNp_dhubht = self.loads_gradients['Np', 'hubHt']
         dTp_dhubht = self.loads_gradients['Tp', 'hubHt']
 
-        dNp_dhubht_abs = self.dNp['hubHt']
-        dTp_dhubht_abs = self.dTp['hubHt']
+        dNp_dhubht_abs = self.dNp['dhubHt']
+        dTp_dhubht_abs = self.dTp['dhubHt']
 
         np.testing.assert_allclose(dNp_dhubht_abs, dNp_dhubht, rtol=1e-4, atol=1e-6) # TODO rtol = 1e-5 atol=1e-8
         np.testing.assert_allclose(dTp_dhubht_abs, dTp_dhubht, rtol=1e-4, atol=1e-6)
@@ -475,9 +477,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dQ_dhubht = self.power_gradients['Q', 'hubHt']
         dP_dhubht = self.power_gradients['P', 'hubHt']
 
-        dT_dhubht_abs = self.dT['hubHt']
-        dQ_dhubht_abs = self.dQ['hubHt']
-        dP_dhubht_abs = self.dP['hubHt']
+        dT_dhubht_abs = self.dT['dhubHt']
+        dQ_dhubht_abs = self.dQ['dhubHt']
+        dP_dhubht_abs = self.dP['dhubHt']
 
         np.testing.assert_allclose(dT_dhubht_abs, dT_dhubht, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dhubht_abs, dQ_dhubht, rtol=5e-5, atol=1e-8)
@@ -491,9 +493,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCQ_dhubht = self.power_gradients['CQ', 'hubHt']
         dCP_dhubht = self.power_gradients['CP', 'hubHt']
 
-        dCT_dhubht_abs = self.dCT['hubHt']
-        dCQ_dhubht_abs = self.dCQ['hubHt']
-        dCP_dhubht_abs = self.dCP['hubHt']
+        dCT_dhubht_abs = self.dCT['dhubHt']
+        dCQ_dhubht_abs = self.dCQ['dhubHt']
+        dCP_dhubht_abs = self.dCP['dhubHt']
 
         np.testing.assert_allclose(dCT_dhubht_abs, dCT_dhubht, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dhubht_abs, dCQ_dhubht, rtol=5e-5, atol=1e-8)
@@ -503,11 +505,11 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dyaw1(self):
 
-        dNp_dyaw = self.loads_gradients['Np', 'yaw']
-        dTp_dyaw = self.loads_gradients['Tp', 'yaw']
+        dNp_dyaw = np.radians(self.loads_gradients['Np', 'yaw'])
+        dTp_dyaw = np.radians(self.loads_gradients['Tp', 'yaw'])
 
-        dNp_dyaw_abs = self.dNp['yaw']
-        dTp_dyaw_abs = self.dTp['yaw']
+        dNp_dyaw_abs = self.dNp['dyaw']
+        dTp_dyaw_abs = self.dTp['dyaw']
 
         np.testing.assert_allclose(dNp_dyaw_abs, dNp_dyaw, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dTp_dyaw_abs, dTp_dyaw, rtol=1e-5, atol=1e-8)
@@ -515,13 +517,13 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dyaw2(self):
 
-        dT_dyaw = self.power_gradients['T', 'yaw']
-        dQ_dyaw = self.power_gradients['Q', 'yaw']
-        dP_dyaw = self.power_gradients['P', 'yaw']
+        dT_dyaw = np.radians(self.power_gradients['T', 'yaw'])
+        dQ_dyaw = np.radians(self.power_gradients['Q', 'yaw'])
+        dP_dyaw = np.radians(self.power_gradients['P', 'yaw'])
 
-        dT_dyaw_abs = self.dT['yaw']
-        dQ_dyaw_abs = self.dQ['yaw']
-        dP_dyaw_abs = self.dP['yaw']
+        dT_dyaw_abs = self.dT['dyaw']
+        dQ_dyaw_abs = self.dQ['dyaw']
+        dP_dyaw_abs = self.dP['dyaw']
 
         np.testing.assert_allclose(dT_dyaw_abs, dT_dyaw, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dyaw_abs, dQ_dyaw, rtol=5e-5, atol=1e-8)
@@ -531,13 +533,13 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dyaw3(self):
 
-        dCT_dyaw = self.power_gradients['CT', 'yaw']
-        dCQ_dyaw = self.power_gradients['CQ', 'yaw']
-        dCP_dyaw = self.power_gradients['CP', 'yaw']
+        dCT_dyaw = np.radians(self.power_gradients['CT', 'yaw'])
+        dCQ_dyaw = np.radians(self.power_gradients['CQ', 'yaw'])
+        dCP_dyaw = np.radians(self.power_gradients['CP', 'yaw'])
 
-        dCT_dyaw_abs = self.dCT['yaw']
-        dCQ_dyaw_abs = self.dCQ['yaw']
-        dCP_dyaw_abs = self.dCP['yaw']
+        dCT_dyaw_abs = self.dCT['dyaw']
+        dCQ_dyaw_abs = self.dCQ['dyaw']
+        dCP_dyaw_abs = self.dCP['dyaw']
 
         np.testing.assert_allclose(dCT_dyaw_abs, dCT_dyaw, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dyaw_abs, dCQ_dyaw, rtol=5e-5, atol=1e-8)
@@ -547,11 +549,11 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dazimuth1(self):
 
-        dNp_dazimuth = self.loads_gradients['Np', 'azimuth']
-        dTp_dazimuth = self.loads_gradients['Tp', 'azimuth']
+        dNp_dazimuth = np.radians(self.loads_gradients['Np', 'azimuth'])
+        dTp_dazimuth = np.radians(self.loads_gradients['Tp', 'azimuth'])
 
-        dNp_dazimuth_abs = self.dNp['azimuth']
-        dTp_dazimuth_abs = self.dTp['azimuth']
+        dNp_dazimuth_abs = self.dNp['dazimuth']
+        dTp_dazimuth_abs = self.dTp['dazimuth']
 
         np.testing.assert_allclose(dNp_dazimuth_abs, dNp_dazimuth, rtol=1e-5, atol=1e-6)
         np.testing.assert_allclose(dTp_dazimuth_abs, dTp_dazimuth, rtol=1e-5, atol=1e-6)
@@ -562,8 +564,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dNp_dUinf = self.loads_gradients['Np', 'Uinf']
         dTp_dUinf = self.loads_gradients['Tp', 'Uinf']
 
-        dNp_dUinf_abs = self.dNp['Uinf']
-        dTp_dUinf_abs = self.dTp['Uinf']
+        dNp_dUinf_abs = self.dNp['dUinf']
+        dTp_dUinf_abs = self.dTp['dUinf']
 
         np.testing.assert_allclose(dNp_dUinf_abs, dNp_dUinf, rtol=1e-5, atol=1e-6)
         np.testing.assert_allclose(dTp_dUinf_abs, dTp_dUinf, rtol=1e-5, atol=1e-6)
@@ -575,9 +577,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dQ_dUinf = self.power_gradients['Q', 'Uinf']
         dP_dUinf = self.power_gradients['P', 'Uinf']
 
-        dT_dUinf_abs = self.dT['Uinf']
-        dQ_dUinf_abs = self.dQ['Uinf']
-        dP_dUinf_abs = self.dP['Uinf']
+        dT_dUinf_abs = self.dT['dUinf']
+        dQ_dUinf_abs = self.dQ['dUinf']
+        dP_dUinf_abs = self.dP['dUinf']
 
         np.testing.assert_allclose(dT_dUinf_abs, dT_dUinf, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dUinf_abs, dQ_dUinf, rtol=5e-5, atol=1e-8)
@@ -591,9 +593,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCQ_dUinf = self.power_gradients['CQ', 'Uinf']
         dCP_dUinf = self.power_gradients['CP', 'Uinf']
 
-        dCT_dUinf_abs = self.dCT['Uinf']
-        dCQ_dUinf_abs = self.dCQ['Uinf']
-        dCP_dUinf_abs = self.dCP['Uinf']
+        dCT_dUinf_abs = self.dCT['dUinf']
+        dCQ_dUinf_abs = self.dCQ['dUinf']
+        dCP_dUinf_abs = self.dCP['dUinf']
 
         np.testing.assert_allclose(dCT_dUinf_abs, dCT_dUinf, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dUinf_abs, dCQ_dUinf, rtol=5e-5, atol=1e-8)
@@ -605,8 +607,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dNp_dOmega = self.loads_gradients['Np', 'Omega']
         dTp_dOmega = self.loads_gradients['Tp', 'Omega']
 
-        dNp_dOmega_abs = self.dNp['Omega']
-        dTp_dOmega_abs = self.dTp['Omega']
+        dNp_dOmega_abs = self.dNp['dOmega']
+        dTp_dOmega_abs = self.dTp['dOmega']
 
         np.testing.assert_allclose(dNp_dOmega_abs, dNp_dOmega, rtol=1e-5, atol=1e-6)
         np.testing.assert_allclose(dTp_dOmega_abs, dTp_dOmega, rtol=1e-5, atol=1e-6)
@@ -618,9 +620,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dQ_dOmega = self.power_gradients['Q', 'Omega']
         dP_dOmega = self.power_gradients['P', 'Omega']
 
-        dT_dOmega_abs = self.dT['Omega']
-        dQ_dOmega_abs = self.dQ['Omega']
-        dP_dOmega_abs = self.dP['Omega']
+        dT_dOmega_abs = self.dT['dOmega']
+        dQ_dOmega_abs = self.dQ['dOmega']
+        dP_dOmega_abs = self.dP['dOmega']
 
         np.testing.assert_allclose(dT_dOmega_abs, dT_dOmega, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dOmega_abs, dQ_dOmega, rtol=5e-5, atol=1e-8)
@@ -646,11 +648,11 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dpitch1(self):
 
-        dNp_dpitch = self.loads_gradients['Np', 'pitch']
-        dTp_dpitch = self.loads_gradients['Tp', 'pitch']
+        dNp_dpitch = np.radians(self.loads_gradients['Np', 'pitch'])
+        dTp_dpitch = np.radians(self.loads_gradients['Tp', 'pitch'])
 
-        dNp_dpitch_abs = self.dNp['pitch']
-        dTp_dpitch_abs = self.dTp['pitch']
+        dNp_dpitch_abs = self.dNp['dpitch']
+        dTp_dpitch_abs = self.dTp['dpitch']
 
         np.testing.assert_allclose(dNp_dpitch_abs, dNp_dpitch, rtol=5e-5, atol=1e-6)
         np.testing.assert_allclose(dTp_dpitch_abs, dTp_dpitch, rtol=5e-5, atol=1e-6)
@@ -658,13 +660,13 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dpitch2(self):
 
-        dT_dpitch = self.power_gradients['T', 'pitch']
-        dQ_dpitch = self.power_gradients['Q', 'pitch']
-        dP_dpitch = self.power_gradients['P', 'pitch']
+        dT_dpitch = np.radians(self.power_gradients['T', 'pitch'])
+        dQ_dpitch = np.radians(self.power_gradients['Q', 'pitch'])
+        dP_dpitch = np.radians(self.power_gradients['P', 'pitch'])
 
-        dT_dpitch_abs = self.dT['pitch']
-        dQ_dpitch_abs = self.dQ['pitch']
-        dP_dpitch_abs = self.dP['pitch']
+        dT_dpitch_abs = self.dT['dpitch']
+        dQ_dpitch_abs = self.dQ['dpitch']
+        dP_dpitch_abs = self.dP['dpitch']
 
         np.testing.assert_allclose(dT_dpitch_abs, dT_dpitch, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dQ_dpitch_abs, dQ_dpitch, rtol=5e-5, atol=1e-8)
@@ -674,13 +676,13 @@ class TestGradientsPower_Loads(TestGradientsClass):
 
     def test_dpitch3(self):
 
-        dCT_dpitch = self.power_gradients['CT', 'pitch']
-        dCQ_dpitch = self.power_gradients['CQ', 'pitch']
-        dCP_dpitch = self.power_gradients['CP', 'pitch']
+        dCT_dpitch = np.radians(self.power_gradients['CT', 'pitch'])
+        dCQ_dpitch = np.radians(self.power_gradients['CQ', 'pitch'])
+        dCP_dpitch = np.radians(self.power_gradients['CP', 'pitch'])
 
-        dCT_dpitch_abs = self.dCT['pitch']
-        dCQ_dpitch_abs = self.dCQ['pitch']
-        dCP_dpitch_abs = self.dCP['pitch']
+        dCT_dpitch_abs = self.dCT['dpitch']
+        dCQ_dpitch_abs = self.dCQ['dpitch']
+        dCP_dpitch_abs = self.dCP['dpitch']
 
         np.testing.assert_allclose(dCT_dpitch_abs, dCT_dpitch, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dCQ_dpitch_abs, dCQ_dpitch, rtol=5e-5, atol=1e-8)
@@ -703,8 +705,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dNp_dprecurve = self.loads_gradients['Np', 'precurve']
         dTp_dprecurve = self.loads_gradients['Tp', 'precurve']
 
-        dNp_dprecurve_abs = self.dNp['precurve']
-        dTp_dprecurve_abs = self.dTp['precurve']
+        dNp_dprecurve_abs = self.dNp['dprecurve']
+        dTp_dprecurve_abs = self.dTp['dprecurve']
 
         np.testing.assert_allclose(dNp_dprecurve_abs, dNp_dprecurve, rtol=3e-4, atol=1e-8)
         np.testing.assert_allclose(dTp_dprecurve_abs, dTp_dprecurve, rtol=3e-4, atol=1e-8)
@@ -726,9 +728,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dQ_dprecurve = self.power_gradients['Q', 'precurve']
         dP_dprecurve = self.power_gradients['P', 'precurve']
 
-        dT_dprecurve_abs = self.dT['precurve']
-        dQ_dprecurve_abs = self.dQ['precurve']
-        dP_dprecurve_abs = self.dP['precurve']
+        dT_dprecurve_abs = self.dT['dprecurve']
+        dQ_dprecurve_abs = self.dQ['dprecurve']
+        dP_dprecurve_abs = self.dP['dprecurve']
 
         np.testing.assert_allclose(dT_dprecurve_abs, dT_dprecurve, rtol=3e-4, atol=1e-8)
         np.testing.assert_allclose(dQ_dprecurve_abs, dQ_dprecurve, rtol=3e-4, atol=1e-8)
@@ -752,9 +754,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCP_dprecurve = self.power_gradients['CP', 'precurve']
 
 
-        dCT_dprecurve_abs = self.dCT['precurve']
-        dCQ_dprecurve_abs = self.dCQ['precurve']
-        dCP_dprecurve_abs = self.dCP['precurve']
+        dCT_dprecurve_abs = self.dCT['dprecurve']
+        dCQ_dprecurve_abs = self.dCQ['dprecurve']
+        dCP_dprecurve_abs = self.dCP['dprecurve']
 
         np.testing.assert_allclose(dCT_dprecurve_abs, dCT_dprecurve, rtol=3e-4, atol=1e-8)
         np.testing.assert_allclose(dCQ_dprecurve_abs, dCQ_dprecurve, rtol=3e-4, atol=1e-8)
@@ -776,8 +778,8 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dNp_dpresweep = self.loads_gradients['Np', 'presweep']
         dTp_dpresweep = self.loads_gradients['Tp', 'presweep']
 
-        dNp_dpresweep_abs = self.dNp['presweep']
-        dTp_dpresweep_abs = self.dTp['presweep']
+        dNp_dpresweep_abs = self.dNp['dpresweep']
+        dTp_dpresweep_abs = self.dTp['dpresweep']
 
         np.testing.assert_allclose(dNp_dpresweep_abs, dNp_dpresweep, rtol=1e-5, atol=1e-8)
         np.testing.assert_allclose(dTp_dpresweep_abs, dTp_dpresweep, rtol=1e-5, atol=1e-8)
@@ -800,9 +802,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dP_dpresweep = self.power_gradients['P', 'presweep']
 
 
-        dT_dpresweep_abs = self.dT['presweep']
-        dQ_dpresweep_abs = self.dQ['presweep']
-        dP_dpresweep_abs = self.dP['presweep']
+        dT_dpresweep_abs = self.dT['dpresweep']
+        dQ_dpresweep_abs = self.dQ['dpresweep']
+        dP_dpresweep_abs = self.dP['dpresweep']
 
         np.testing.assert_allclose(dT_dpresweep_abs, dT_dpresweep, rtol=3e-4, atol=1e-8)
         np.testing.assert_allclose(dQ_dpresweep_abs, dQ_dpresweep, rtol=3e-4, atol=1e-8)
@@ -827,9 +829,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCQ_dpresweep = self.power_gradients['CQ', 'presweep']
         dCP_dpresweep = self.power_gradients['CP', 'presweep']
 
-        dCT_dpresweep_abs = self.dCT['presweep']
-        dCQ_dpresweep_abs = self.dCQ['presweep']
-        dCP_dpresweep_abs = self.dCP['presweep']
+        dCT_dpresweep_abs = self.dCT['dpresweep']
+        dCQ_dpresweep_abs = self.dCQ['dpresweep']
+        dCP_dpresweep_abs = self.dCP['dpresweep']
 
         np.testing.assert_allclose(dCT_dpresweep_abs, dCT_dpresweep, rtol=3e-4, atol=1e-8)
         np.testing.assert_allclose(dCQ_dpresweep_abs, dCQ_dpresweep, rtol=3e-4, atol=1e-8)
@@ -873,9 +875,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dQ_dprecurveTip = self.power_gradients['Q', 'precurveTip']
         dP_dprecurveTip = self.power_gradients['P', 'precurveTip']
 
-        dT_dprecurveTip_abs = self.dT['precurveTip']
-        dQ_dprecurveTip_abs = self.dQ['precurveTip']
-        dP_dprecurveTip_abs = self.dP['precurveTip']
+        dT_dprecurveTip_abs = self.dT['dprecurveTip']
+        dQ_dprecurveTip_abs = self.dQ['dprecurveTip']
+        dP_dprecurveTip_abs = self.dP['dprecurveTip']
 
         np.testing.assert_allclose(dT_dprecurveTip_abs, dT_dprecurveTip, rtol=1e-4, atol=1e-8)
         np.testing.assert_allclose(dQ_dprecurveTip_abs, dQ_dprecurveTip, rtol=1e-4, atol=1e-8)
@@ -899,32 +901,32 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCQ_dprecurveTip = self.power_gradients['CQ', 'precurveTip']
         dCP_dprecurveTip = self.power_gradients['CP', 'precurveTip']
 
-        dCT_dprecurveTip_abs = self.dCT['precurveTip']
-        dCQ_dprecurveTip_abs = self.dCQ['precurveTip']
-        dCP_dprecurveTip_abs = self.dCP['precurveTip']
+        dCT_dprecurveTip_abs = self.dCT['dprecurveTip']
+        dCQ_dprecurveTip_abs = self.dCQ['dprecurveTip']
+        dCP_dprecurveTip_abs = self.dCP['dprecurveTip']
 
         np.testing.assert_allclose(dCT_dprecurveTip_abs, dCT_dprecurveTip, rtol=1e-4, atol=1e-8)
         np.testing.assert_allclose(dCQ_dprecurveTip_abs, dCQ_dprecurveTip, rtol=1e-4, atol=1e-8)
         np.testing.assert_allclose(dCP_dprecurveTip_abs, dCP_dprecurveTip, rtol=1e-4, atol=1e-8)
 
 
-    def test_dpresweepTip1(self):
-
-        # presweep = np.linspace(1, 10, self.n)
-        # presweepTip = 10.1
-        # precone = 0.0
-        # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
-        #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
-        #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
-        #
-        # Np, Tp, dNp, dTp \
-        #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
-
-        dNp_dpresweepTip = self.loads_gradients['Np', 'presweepTip']
-        dTp_dpresweepTip = self.loads_gradients['Tp', 'presweepTip']
-
-        np.testing.assert_allclose(dNp_dpresweepTip, 0.0, rtol=1e-4, atol=1e-8)
-        np.testing.assert_allclose(dTp_dpresweepTip, 0.0, rtol=1e-4, atol=1e-8)
+    # def test_dpresweepTip1(self):
+    #
+    #     # presweep = np.linspace(1, 10, self.n)
+    #     # presweepTip = 10.1
+    #     # precone = 0.0
+    #     # rotor = CCBlade(self.r, self.chord, self.theta, self.af, self.Rhub, self.Rtip,
+    #     #     self.B, self.rho, self.mu, precone, self.tilt, self.yaw, self.shearExp,
+    #     #     self.hubHt, self.nSector, derivatives=True, presweep=presweep, presweepTip=presweepTip)
+    #     #
+    #     # Np, Tp, dNp, dTp \
+    #     #     = rotor.distributedAeroLoads(self.Uinf, self.Omega, self.pitch, self.azimuth)
+    #
+    #     dNp_dpresweepTip = self.loads_gradients['Np', 'presweepTip']
+    #     dTp_dpresweepTip = self.loads_gradients['Tp', 'presweepTip']
+    #
+    #     np.testing.assert_allclose(dNp_dpresweepTip, 0.0, rtol=1e-4, atol=1e-8)
+    #     np.testing.assert_allclose(dTp_dpresweepTip, 0.0, rtol=1e-4, atol=1e-8)
 
 
     def test_dpresweepTip2(self):
@@ -943,9 +945,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dQ_dpresweepTip = self.power_gradients['Q', 'presweepTip']
         dP_dpresweepTip = self.power_gradients['P', 'presweepTip']
 
-        dT_dpresweepTip_abs = self.dT['presweepTip']
-        dQ_dpresweepTip_abs = self.dQ['presweepTip']
-        dP_dpresweepTip_abs = self.dP['presweepTip']
+        dT_dpresweepTip_abs = self.dT['dpresweepTip']
+        dQ_dpresweepTip_abs = self.dQ['dpresweepTip']
+        dP_dpresweepTip_abs = self.dP['dpresweepTip']
 
         np.testing.assert_allclose(dT_dpresweepTip_abs, dT_dpresweepTip, rtol=1e-4, atol=1e-8)
         np.testing.assert_allclose(dQ_dpresweepTip_abs, dQ_dpresweepTip, rtol=1e-4, atol=1e-8)
@@ -969,9 +971,9 @@ class TestGradientsPower_Loads(TestGradientsClass):
         dCQ_dpresweepTip = self.power_gradients['CQ', 'presweepTip']
         dCP_dpresweepTip = self.power_gradients['CP', 'presweepTip']
 
-        dCT_dpresweepTip_abs = self.dCT['presweepTip']
-        dCQ_dpresweepTip_abs = self.dCQ['presweepTip']
-        dCP_dpresweepTip_abs = self.dCP['presweepTip']
+        dCT_dpresweepTip_abs = self.dCT['dpresweepTip']
+        dCQ_dpresweepTip_abs = self.dCQ['dpresweepTip']
+        dCP_dpresweepTip_abs = self.dCP['dpresweepTip']
 
         np.testing.assert_allclose(dCT_dpresweepTip_abs, dCT_dpresweepTip, rtol=1e-4, atol=1e-8)
         np.testing.assert_allclose(dCQ_dpresweepTip_abs, dCQ_dpresweepTip, rtol=1e-4, atol=1e-8)

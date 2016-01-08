@@ -4,7 +4,7 @@ import warnings
 from math import cos, sin, pi, sqrt, acos, exp
 import numpy as np
 import _bem
-from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, SqliteRecorder, ScipyGMRES, NLGaussSeidel
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel
 from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
@@ -182,7 +182,7 @@ class FlowCondition(Component):
 
     def list_deriv_vars(self):
 
-        inputs = ('Vx', 'Vy', 'theta', 'pitch', 'rho', 'mu', 'phi_sub', 'a_sub', 'ap_sub')
+        inputs = ('Vx', 'Vy', 'theta', 'pitch', 'rho', 'mu', 'phi_sub', 'a_sub', 'ap_sub', 'chord')
         outputs = ('alpha_sub', 'W_sub', 'Re_sub')
 
         return inputs, outputs
@@ -1307,15 +1307,11 @@ if __name__ == "__main__":
 
     loads.run()
 
-    test_grad = open('partial_test_grad2.txt', 'w')
+    print 'Np', loads['Np']
+    print 'Tp', loads['Tp']
 
-    power_gradients = loads.check_total_derivatives(out_stream=test_grad, unknown_list=['Np', 'Tp'])
-    # power_partial = loads.check_partial_derivatives(out_stream=test_grad)
-    print loads['Np']
-    print loads['Tp']
+    ## CCBlade
     n2 = 1
-
-    ## Test CCBlade
     ccblade = Problem()
     ccblade.root = CCBlade(nSector, n)
 
@@ -1352,13 +1348,6 @@ if __name__ == "__main__":
     ccblade['bemoptions'] = bemoptions
 
     ccblade.run()
-    print ccblade['CP']
-    print ccblade['CQ']
-    print ccblade['CT']
-    test_grad = open('partial_test_grad.txt', 'w')
-    # power_gradients = ccblade.check_total_derivatives(out_stream=test_grad, unknown_list=['CP'])
-    # power_gradients = ccblade.check_total_derivatives_modified2(out_stream=test_grad)
-    # power_partial = ccblade.check_partial_derivatives(out_stream=test_grad)
 
     print 'CP', ccblade['CP']
     print 'CT', ccblade['CT']
