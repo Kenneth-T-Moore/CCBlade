@@ -1102,7 +1102,12 @@ class CCBlade(Group):
         self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
         self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
         self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
+        self.add('mu', IndepVarComp('mu', 0.0), promotes=['*'])
+        self.add('rho', IndepVarComp('rho', 0.0), promotes=['*'])
+        self.add('shearExp', IndepVarComp('shearExp', 0.0), promotes=['*'])
         self.add('af', IndepVarComp('af', np.zeros(n), pass_by_obj=True), promotes=['*'])
+        self.add('B', IndepVarComp('B', 3, pass_by_obj=True), promotes=['*'])
+        self.add('nSector', IndepVarComp('nSector', 4, pass_by_obj=True), promotes=['*'])
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
         self.add('mux_power', MUX_POWER(n2), promotes=['*'])
 
@@ -1340,39 +1345,39 @@ if __name__ == "__main__":
     azimuth = 90.
     n = len(r)
 
-    ##### Test LoadsGroup
-    loads = Problem(impl=impl)
-    root = loads.root = Loads(n)
-    loads.setup(check=False)
-
-    loads['Rhub'] = Rhub
-    loads['Rtip'] = Rtip
-    loads['r'] = r
-    loads['chord'] = chord
-    loads['theta'] = np.radians(theta)
-    loads['rho'] = rho
-    loads['mu'] = mu
-    loads['tilt'] = np.radians(tilt)
-    loads['precone'] = np.radians(precone)
-    loads['yaw'] = np.radians(yaw)
-    loads['shearExp'] = shearExp
-    loads['hubHt'] = hubHt
-    loads['Uinf'] = Uinf
-    loads['Omega'] = Omega
-    loads['pitch'] = np.radians(pitch)
-    loads['azimuth'] = np.radians(azimuth)
-    loads['af'] = af
-    loads['bemoptions'] = bemoptions
-
-    loads.run()
-
-    print 'Np', loads['Np']
-    print 'Tp', loads['Tp']
+    #### Test LoadsGroup
+    # loads = Problem(impl=impl)
+    # root = loads.root = Loads(n)
+    # loads.setup(check=False)
+    #
+    # loads['Rhub'] = Rhub
+    # loads['Rtip'] = Rtip
+    # loads['r'] = r
+    # loads['chord'] = chord
+    # loads['theta'] = np.radians(theta)
+    # loads['rho'] = rho
+    # loads['mu'] = mu
+    # loads['tilt'] = np.radians(tilt)
+    # loads['precone'] = np.radians(precone)
+    # loads['yaw'] = np.radians(yaw)
+    # loads['shearExp'] = shearExp
+    # loads['hubHt'] = hubHt
+    # loads['Uinf'] = Uinf
+    # loads['Omega'] = Omega
+    # loads['pitch'] = np.radians(pitch)
+    # loads['azimuth'] = np.radians(azimuth)
+    # loads['af'] = af
+    # loads['bemoptions'] = bemoptions
+    #
+    # loads.run()
+    #
+    # print 'Np', loads['Np']
+    # print 'Tp', loads['Tp']
 
     ##### Test CCBlade
-    Uinf = np.array([10.0])  # Needs to be an array for CCBlade group
+    Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
     tsr = 7.55
-    pitch = np.array([0.0])
+    pitch = np.array([0.0, 0.0])
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     n2 = len(Uinf)
 
@@ -1416,53 +1421,6 @@ if __name__ == "__main__":
     ccblade.run()
     t = time.time()
     print t - t0
-
-    Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
-    tsr = 7.55
-    pitch = np.array([0.0, 0.0])
-    Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
-    n2 = len(Uinf)
-
-    ccblade = Problem(impl=impl)
-    ccblade.root = CCBlade(nSector, n, n2)
-
-    ### SETUP OPTIMIZATION
-    # ccblade.driver = pyOptSparseDriver()
-    # ccblade.driver.options['optimizer'] = 'SNOPT'
-    # ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
-    # ccblade.driver.add_objective('obj')
-    # recorder = SqliteRecorder('recorder')
-    # recorder.options['record_params'] = True
-    # recorder.options['record_metadata'] = True
-    # ccblade.driver.add_recorder(recorder)
-
-    ccblade.setup(check=False)
-
-    ccblade['Rhub'] = Rhub
-    ccblade['Rtip'] = Rtip
-    ccblade['r'] = r
-    ccblade['chord'] = chord
-    ccblade['theta'] = np.radians(theta)
-    ccblade['B'] = B
-    ccblade['rho'] = rho
-    ccblade['mu'] = mu
-    ccblade['tilt'] = np.radians(tilt)
-    ccblade['precone'] = np.radians(precone)
-    ccblade['yaw'] = np.radians(yaw)
-    ccblade['shearExp'] = shearExp
-    ccblade['hubHt'] = hubHt
-    ccblade['nSector'] = nSector
-    ccblade['Uinf'] = Uinf
-    ccblade['Omega'] = Omega
-    ccblade['pitch'] = np.radians(pitch)
-    ccblade['af'] = af
-    ccblade['bemoptions'] = bemoptions
-
-    t0 = time.time()
-    ccblade.run()
-    t = time.time()
-    print t - t0
-
 
     print 'CP', ccblade['CP']
     print 'CT', ccblade['CT']
