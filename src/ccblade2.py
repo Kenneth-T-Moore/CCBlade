@@ -70,6 +70,7 @@ class WindComponents(Component):
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
         self.fd_options['force_fd'] = True
+        self.add_param('theta', val=np.zeros(n))
 
     def solve_nonlinear(self, params, unknowns, resids):
         unknowns['Vx'], unknowns['Vy'] = _bem.windcomponents(params['r'], params['precurve'], params['presweep'], params['precone'], params['yaw'], params['tilt'], params['azimuth'], params['Uinf'], params['Omega'], params['hubHt'], params['shearExp'])
@@ -590,6 +591,10 @@ class MUX_POWER(Component):
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
         self.n2 = n2
+        self.add_param('theta', val=np.zeros(17))
+        self.add_param('Uinf', val=np.zeros(n2))
+        self.add_param('pitch', val=np.zeros(n2))
+        self.add_param('Omega', val=np.zeros(n2))
 
     def solve_nonlinear(self, params, unknowns, resids):
         for i in range(self.n2):
@@ -1085,6 +1090,77 @@ class Loads(Group):
         self.add('loads', DistributedAeroLoads(n), promotes=['*'])
         self.add('obj_cmp', ExecComp('obj = -max(Np)', Np=np.zeros(17)), promotes=['*'])
 
+class Loads_for_RotorSE(Component):
+    def __init__(self, n):
+        super(Loads_for_RotorSE, self).__init__()
+        self.add_param('Rhub', shape=1)
+        self.add_param('r', val=np.zeros(n))
+        self.add_param('Rtip', shape=1)
+        self.add_param('Np', shape=n)
+        self.add_param('Tp', shape=n)
+
+        self.add_output('loads:r', shape=n+2, units='m', desc='radial positions along blade going toward tip')
+        self.add_output('loads:Px', shape=n+2, units='N/m', desc='distributed loads in blade-aligned x-direction')
+        self.add_output('loads:Py', shape=n+2, units='N/m', desc='distributed loads in blade-aligned y-direction')
+        self.add_output('loads:Pz', shape=n+2, units='N/m', desc='distributed loads in blade-aligned z-direction')
+
+        # corresponding setting for loads
+        self.add_output('loads:V', shape=1, units='m/s', desc='hub height wind speed')
+        self.add_output('loads:Omega', shape=1, units='rpm', desc='rotor rotation speed')
+        self.add_output('loads:pitch', shape=1, units='deg', desc='pitch angle')
+        self.add_output('loads:azimuth', shape=1, units='deg', desc='azimuthal angle')
+
+        self.n = n
+
+    def solve_nonlinear(self, params, unknowns, resids):
+
+        unknowns['loads:r'] = np.concatenate([[params['Rhub']], params['r'], [params['Rtip']]])
+        Np = np.concatenate([[0.0], params['Np'], [0.0]])
+        Tp = np.concatenate([[0.0], params['Tp'], [0.0]])
+
+        # conform to blade-aligned coordinate system
+        unknowns['loads:Px'] = Np
+        unknowns['loads:Py'] = -Tp
+        unknowns['loads:Pz'] = 0*Np
+
+        # return other outputs needed
+        unknowns['loads:V'] = params['Uinf']
+        unknowns['loads:Omega'] = params['Omega']
+        unknowns['loads:pitch'] = params['pitch']
+        unknowns['loads:azimuth'] = params['azimuth']
+
+    def linearize(self, params, unknowns, resids):
+        J = {}
+        n = self.n
+
+        dr_dr = vstack([np.zeros(n), np.eye(n), np.zeros(n)])
+        dr_dRhub = np.zeros(n+2)
+        dr_dRtip = np.zeros(n+2)
+        dr_dRhub[0] = 1.0
+        dr_dRtip[-1] = 1.0
+
+        dV = np.zeros(4*n+10)
+        dV[3*n+6] = 1.0
+        dOmega = np.zeros(4*n+10)
+        dOmega[3*n+7] = 1.0
+        dpitch = np.zeros(4*n+10)
+        dpitch[3*n+8] = 1.0
+        dazimuth = np.zeros(4*n+10)
+        dazimuth[3*n+9] = 1.0
+
+        J = {}
+        zero = np.zeros(17)
+        J['loads:r', 'r'] = dr_dr
+        J['loads:r', 'Rhub'] = dr_dRhub
+        J['loads:r', 'Rtip'] = dr_dRtip
+        J['loads:Px', 'Np'] = np.vstack([zero, np.eye(n), zero])
+        J['loads:Py', 'Tp'] = np.vstack([zero, -np.eye(n), zero])
+        J['loads:V', 'Uinf'] = 1.0
+        J['loads:Omega', 'Omega'] = 1.0
+        J['loads:pitch', 'pitch'] = 1.0
+        J['loads:azimuth', 'azimuth'] = 1.0
+
+        return J
 
 class LoadsGroup_to_RotorSE(Group):
     def __init__(self, n):
@@ -1096,7 +1172,7 @@ class LoadsGroup_to_RotorSE(Group):
             self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options'])
             self.connect('r', 'brent'+str(i+1)+'.r', src_indices=[i])
             self.connect('chord', 'brent'+str(i+1)+'.chord', src_indices=[i])
-            self.connect('theta', 'brent'+str(i+1)+'.theta', src_indices=[i])
+            # self.connect('theta', 'brent'+str(i+1)+'.theta', src_indices=[i])
             self.connect('Vx', 'brent'+str(i+1)+'.Vx', src_indices=[i])
             self.connect('Vy', 'brent'+str(i+1)+'.Vy', src_indices=[i])
             self.connect('brent'+str(i+1)+'.phi_sub', 'phi'+str(i+1))
@@ -1201,10 +1277,41 @@ class CCBlade_to_RotorSE_connection(Group):
         super(CCBlade_to_RotorSE_connection, self).__init__()
 
         if run_case == 'power':
+            self.add('mux_power', MUX_POWER(n2), promotes=['*'])
+            pg = self.add('parallel', ParallelGroup(), promotes=['*'])
             for i in range(n2):
-                self.add('power'+str(i), CCBlade(nSector, n), promotes=['r'])
+                pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'airfoil_parameterization', 'airfoil_analysis_options', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord'])
+                self.connect('Uinf', 'results'+str(i)+'.Uinf', src_indices=[i])
+                self.connect('pitch', 'results'+str(i)+'.pitch', src_indices=[i])
+                self.connect('Omega', 'results'+str(i)+'.Omega', src_indices=[i])
+                self.connect('results'+str(i)+'.CT', 'CT'+str(i+1))
+                self.connect('results'+str(i)+'.CQ', 'CQ'+str(i+1))
+                self.connect('results'+str(i)+'.CP', 'CP'+str(i+1))
+                self.connect('results'+str(i)+'.T', 'T'+str(i+1))
+                self.connect('results'+str(i)+'.Q', 'Q'+str(i+1))
+                self.connect('results'+str(i)+'.P', 'P'+str(i+1))
+                for k in range(nSector):
+                    for j in range(n):
+                        self.connect('theta', 'results'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.theta', src_indices=[j])
+                        self.connect('chord', 'results'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.chord', src_indices=[j])
+                        self.connect('r', 'results'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.r', src_indices=[j])
         elif run_case == 'loads':
-            self.add('loads', LoadsGroup_to_RotorSE(n), promotes=['*'])
+            self.add('init', CCInit(), promotes=['*'])
+            self.add('wind', WindComponents(n), promotes=['*'])
+            self.add('mux', MUX(n), promotes=['*'])
+            for i in range(n):
+                self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options'])
+                self.connect('r', 'brent'+str(i+1)+'.r', src_indices=[i])
+                self.connect('chord', 'brent'+str(i+1)+'.chord', src_indices=[i])
+                self.connect('theta', 'brent'+str(i+1)+'.theta', src_indices=[i])
+                self.connect('Vx', 'brent'+str(i+1)+'.Vx', src_indices=[i])
+                self.connect('Vy', 'brent'+str(i+1)+'.Vy', src_indices=[i])
+                self.connect('brent'+str(i+1)+'.phi_sub', 'phi'+str(i+1))
+                self.connect('brent'+str(i+1)+'.cl_sub', 'cl'+str(i+1))
+                self.connect('brent'+str(i+1)+'.cd_sub', 'cd'+str(i+1))
+                self.connect('brent'+str(i+1)+'.W_sub', 'W'+str(i+1))
+            self.add('loads', DistributedAeroLoads(n), promotes=['*'])
+            self.add('loads_rotor', Loads_for_RotorSE(n), promotes=['*'])
 
         else:
             print 'Warning: run_case needs to be either power or loads.'
