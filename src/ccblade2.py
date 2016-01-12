@@ -4,8 +4,9 @@ import warnings
 from math import cos, sin, pi, sqrt, acos, exp
 import numpy as np
 import _bem
-from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel, ParallelGroup
 from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
+from openmdao.core.mpi_wrap import MPI
 from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
 from airfoilprep import Airfoil
@@ -1105,8 +1106,9 @@ class CCBlade(Group):
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
         self.add('mux_power', MUX_POWER(n2), promotes=['*'])
 
+        pg = self.add('parallel', ParallelGroup(), promotes=['*'])
         for i in range(n2):
-            self.add('cc'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'af', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord']) #, 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+            pg.add('cc'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'af', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord']) #, 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
             self.connect('Uinf', 'cc'+str(i)+'.Uinf', src_indices=[i])
             self.connect('pitch', 'cc'+str(i)+'.pitch', src_indices=[i])
             self.connect('Omega', 'cc'+str(i)+'.Omega', src_indices=[i])
@@ -1268,6 +1270,19 @@ class CCAirfoil:
 if __name__ == "__main__":
 
 
+    if MPI: # pragma: no cover
+        # if you called this script with 'mpirun', then use the petsc data passing
+        from openmdao.core.petsc_impl import PetscImpl as impl
+    else:
+        # if you didn't use `mpirun`, then use the numpy data passing
+        from openmdao.api import BasicImpl as impl
+
+    def mpi_print(prob, *args):
+        """ helper function to only print on rank 0"""
+        if prob.root.comm.rank == 0:
+            print args
+
+
     # geometry
     Rhub = 1.5
     Rtip = 63.0
@@ -1326,7 +1341,7 @@ if __name__ == "__main__":
     n = len(r)
 
     ##### Test LoadsGroup
-    loads = Problem()
+    loads = Problem(impl=impl)
     root = loads.root = Loads(n)
     loads.setup(check=False)
 
@@ -1355,13 +1370,13 @@ if __name__ == "__main__":
     print 'Tp', loads['Tp']
 
     ##### Test CCBlade
-    Uinf = np.array([10.0]) # Needs to be an array for CCBlade group
+    Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
     tsr = 7.55
-    pitch = np.array([0.0])
+    pitch = np.array([0.0, 0.0])
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     n2 = len(Uinf)
 
-    ccblade = Problem()
+    ccblade = Problem(impl=impl)
     ccblade.root = CCBlade(nSector, n, n2)
 
     ### SETUP OPTIMIZATION
