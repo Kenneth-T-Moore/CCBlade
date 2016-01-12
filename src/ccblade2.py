@@ -1108,21 +1108,21 @@ class CCBlade(Group):
 
         pg = self.add('parallel', ParallelGroup(), promotes=['*'])
         for i in range(n2):
-            pg.add('cc'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'af', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord']) #, 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
-            self.connect('Uinf', 'cc'+str(i)+'.Uinf', src_indices=[i])
-            self.connect('pitch', 'cc'+str(i)+'.pitch', src_indices=[i])
-            self.connect('Omega', 'cc'+str(i)+'.Omega', src_indices=[i])
-            self.connect('cc'+str(i)+'.CT', 'CT'+str(i+1))
-            self.connect('cc'+str(i)+'.CQ', 'CQ'+str(i+1))
-            self.connect('cc'+str(i)+'.CP', 'CP'+str(i+1))
-            self.connect('cc'+str(i)+'.T', 'T'+str(i+1))
-            self.connect('cc'+str(i)+'.Q', 'Q'+str(i+1))
-            self.connect('cc'+str(i)+'.P', 'P'+str(i+1))
+            pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'af', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord']) #, 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+            self.connect('Uinf', 'results'+str(i)+'.Uinf', src_indices=[i])
+            self.connect('pitch', 'results'+str(i)+'.pitch', src_indices=[i])
+            self.connect('Omega', 'results'+str(i)+'.Omega', src_indices=[i])
+            self.connect('results'+str(i)+'.CT', 'CT'+str(i+1))
+            self.connect('results'+str(i)+'.CQ', 'CQ'+str(i+1))
+            self.connect('results'+str(i)+'.CP', 'CP'+str(i+1))
+            self.connect('results'+str(i)+'.T', 'T'+str(i+1))
+            self.connect('results'+str(i)+'.Q', 'Q'+str(i+1))
+            self.connect('results'+str(i)+'.P', 'P'+str(i+1))
             for k in range(nSector):
                 for j in range(n):
-                    self.connect('theta', 'cc'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.theta', src_indices=[j])
-                    self.connect('chord', 'cc'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.chord', src_indices=[j])
-                    self.connect('r', 'cc'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.r', src_indices=[j])
+                    self.connect('theta', 'results'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.theta', src_indices=[j])
+                    self.connect('chord', 'results'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.chord', src_indices=[j])
+                    self.connect('r', 'results'+str(i)+'.load_group.group'+str(k+1)+'.brent'+str(j+1)+'.r', src_indices=[j])
         self.add('obj_cmp', ExecComp('obj = -max(CP)', CP=np.zeros(n2)), promotes=['*'])
 
 class AirfoilInterface(Interface):
@@ -1370,6 +1370,53 @@ if __name__ == "__main__":
     print 'Tp', loads['Tp']
 
     ##### Test CCBlade
+    Uinf = np.array([10.0])  # Needs to be an array for CCBlade group
+    tsr = 7.55
+    pitch = np.array([0.0])
+    Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
+    n2 = len(Uinf)
+
+    ccblade = Problem(impl=impl)
+    ccblade.root = CCBlade(nSector, n, n2)
+
+    ### SETUP OPTIMIZATION
+    # ccblade.driver = pyOptSparseDriver()
+    # ccblade.driver.options['optimizer'] = 'SNOPT'
+    # ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # ccblade.driver.add_objective('obj')
+    # recorder = SqliteRecorder('recorder')
+    # recorder.options['record_params'] = True
+    # recorder.options['record_metadata'] = True
+    # ccblade.driver.add_recorder(recorder)
+
+    ccblade.setup(check=False)
+
+    ccblade['Rhub'] = Rhub
+    ccblade['Rtip'] = Rtip
+    ccblade['r'] = r
+    ccblade['chord'] = chord
+    ccblade['theta'] = np.radians(theta)
+    ccblade['B'] = B
+    ccblade['rho'] = rho
+    ccblade['mu'] = mu
+    ccblade['tilt'] = np.radians(tilt)
+    ccblade['precone'] = np.radians(precone)
+    ccblade['yaw'] = np.radians(yaw)
+    ccblade['shearExp'] = shearExp
+    ccblade['hubHt'] = hubHt
+    ccblade['nSector'] = nSector
+    ccblade['Uinf'] = Uinf
+    ccblade['Omega'] = Omega
+    ccblade['pitch'] = np.radians(pitch)
+    ccblade['af'] = af
+    ccblade['bemoptions'] = bemoptions
+
+    import time
+    t0 = time.time()
+    ccblade.run()
+    t = time.time()
+    print t - t0
+
     Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
     tsr = 7.55
     pitch = np.array([0.0, 0.0])
@@ -1411,7 +1458,11 @@ if __name__ == "__main__":
     ccblade['af'] = af
     ccblade['bemoptions'] = bemoptions
 
+    t0 = time.time()
     ccblade.run()
+    t = time.time()
+    print t - t0
+
 
     print 'CP', ccblade['CP']
     print 'CT', ccblade['CT']
