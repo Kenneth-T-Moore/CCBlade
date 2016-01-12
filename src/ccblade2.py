@@ -1137,7 +1137,7 @@ class FlowSweep(Group):
 
     def __init__(self, nSector, n):
         super(FlowSweep, self).__init__()
-        self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'r', 'chord',  'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'precone', 'tilt', 'yaw', 'shearExp', 'hubHt', 'B', 'af', 'bemoptions'])
+        self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'r', 'chord',  'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'precone', 'tilt', 'yaw', 'shearExp', 'hubHt', 'B', 'airfoil_parameterization', 'airfoil_analysis_options', 'bemoptions'])
         self.add('eval', CCEvaluate(n, nSector), promotes=['Uinf', 'Rtip', 'Omega', 'r', 'Rhub', 'B', 'precurve', 'presweep', 'presweepTip', 'precurveTip', 'precone', 'nSector', 'rotorR', 'rho', 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
         for i in range(nSector):
             self.connect('load_group.group' + str(i+1) + '.loads.Np', 'eval.Np' + str(i+1))
@@ -1168,7 +1168,9 @@ class CCBlade(Group):
         self.add('mu', IndepVarComp('mu', 0.0), promotes=['*'])
         self.add('rho', IndepVarComp('rho', 0.0), promotes=['*'])
         self.add('shearExp', IndepVarComp('shearExp', 0.0), promotes=['*'])
-        self.add('af', IndepVarComp('af', np.zeros(n), pass_by_obj=True), promotes=['*'])
+        # self.add('af', IndepVarComp('af', np.zeros(n), pass_by_obj=True), promotes=['*'])
+        self.add('airfoil_parameterization', IndepVarComp('airfoil_parameterization', val=np.zeros((n, 8))), promotes=['*'])
+        self.add('airfoil_analysis_options', IndepVarComp('airfoil_analysis_options', {}), promotes=['*'])
         self.add('B', IndepVarComp('B', 3, pass_by_obj=True), promotes=['*'])
         self.add('nSector', IndepVarComp('nSector', 4, pass_by_obj=True), promotes=['*'])
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
@@ -1176,7 +1178,7 @@ class CCBlade(Group):
 
         pg = self.add('parallel', ParallelGroup(), promotes=['*'])
         for i in range(n2):
-            pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'af', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord']) #, 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
+            pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'airfoil_parameterization', 'airfoil_analysis_options', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord'])
             self.connect('Uinf', 'results'+str(i)+'.Uinf', src_indices=[i])
             self.connect('pitch', 'results'+str(i)+'.pitch', src_indices=[i])
             self.connect('Omega', 'results'+str(i)+'.Omega', src_indices=[i])
