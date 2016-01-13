@@ -1465,7 +1465,7 @@ class Airfoil(object):
         sys.path.append(os.environ['SU2_RUN'])
         import SU2
 
-        wl, wu, N, dz = CST_to_kulfan(CST[0])
+        wl, wu, N, dz = CST_to_kulfan(CST)
 
         # Populate x coordinates
         x = np.ones((N, 1))
@@ -1527,11 +1527,6 @@ class Airfoil(object):
         subprocess.call([su2_file_execute])
         os.chdir(savedPath)
 
-
-        # filename = 'free_form_config.cfg'
-        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
-        filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
-
         # filename = 'inv_NACA0012.cfg'
         partitions = processors
         compute = True
@@ -1539,6 +1534,9 @@ class Airfoil(object):
         iterations = iterations
 
         # Config and state
+        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
+        filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
+        # filename = basepath + os.path.sep + 'test_incomp_rans.cfg'
         config = SU2.io.Config(filename)
         state  = SU2.io.State()
         config.NUMBER_PART = partitions
@@ -1554,7 +1552,7 @@ class Airfoil(object):
         config.AoA = np.degrees(alpha)
         Ma = Uinf / 340.29  # Speed of sound at sea level
         config.MACH_NUMBER = Ma
-        config.REYNOLDS_NUMBER= Re
+        config.REYNOLDS_NUMBER = Re
 
         cd = SU2.eval.func('DRAG', config, state)
         cl = SU2.eval.func('LIFT', config, state)
@@ -1581,17 +1579,11 @@ class Airfoil(object):
         get_gradients = info.get('GRADIENTS')
         dcl_dx = get_gradients.get('LIFT')
 
-
-
-        # return state
-
         n = len(CST)
         m = len(dcd_dx)
         dcst_dx = np.zeros((n, m))
-        fd_step = 1e-6
 
-        wl_original = [-0.5, -0.5, -0.5, -0.5]
-        wu_original = [0.5, 0.5, 0.5, 0.5]
+        wl_original, wu_original = wu, wl
         dz = 0.0
         N = 200
         coord_old = cst_to_coordinates_from_kulfan(wl_original, wu_original, N, dz)
@@ -1600,7 +1592,7 @@ class Airfoil(object):
 
         # Gradients
         if FDorCS == 'FD':
-
+            fd_step = 1e-6
             for i in range(0, n):
                 wl_new = deepcopy(wl_original)
                 wu_new = deepcopy(wu_original)
@@ -1627,7 +1619,7 @@ class Airfoil(object):
                 if i >= n/2:
                     wl_new[i] += cs_step
                 else:
-                    wu_new[i+4] += fd_step
+                    wu_new[i+4] += cs_step
                 coor_new = cst_to_coordinates_complex(wl_new, wu_new, N, dz)
                 j = 0
                 for coor_d in design:
@@ -1636,12 +1628,16 @@ class Airfoil(object):
                     else:
                         dcst_dx[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
                     j += 1
+        else:
+            print 'Warning. FDorCS needs to be set to either FD or CS'
         dcst_dx = np.matrix(dcst_dx)
         dcl_dx = np.matrix(dcl_dx)
         dcd_dx = np.matrix(dcd_dx)
 
         dcl_dcst = dcst_dx * dcl_dx.T
         dcd_dcst = dcst_dx * dcd_dx.T
+
+        print cl, cd, dcl_dcst, dcd_dcst
 
         return cl, cd, dcl_dcst, dcd_dcst
 

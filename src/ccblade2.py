@@ -1446,7 +1446,8 @@ if __name__ == "__main__":
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     azimuth = 90.
     n = len(r)
-    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
+    # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
+    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='CFD', FDorCS='FD', iterations=20, processors=0)
 
     #### Test LoadsGroup
     loads = Problem(impl=impl)
@@ -1454,11 +1455,11 @@ if __name__ == "__main__":
 
     loads.driver = pyOptSparseDriver()
     loads.driver.options['optimizer'] = 'SNOPT'
-    # loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
-    loads.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
+    loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # loads.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
     loads.driver.add_objective('obj')
 
-    recorder = DumpRecorder('optimization.log')
+    recorder = DumpRecorder('optimization2.log')
     # adding specific includes works, but leaving it out results in a crash
     # recorder.options['includes'] = ['x']
     loads.driver.add_recorder(recorder)
@@ -1495,6 +1496,7 @@ if __name__ == "__main__":
 
     print 'Np', loads['Np']
     print 'Tp', loads['Tp']
+    print 'Omega', loads['Omega']
 
     ##### Test CCBlade
     # Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
