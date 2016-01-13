@@ -36,12 +36,14 @@ import pyxlight as xfoil
 import pyxlight_cs as xfoil_cs
 
 class xfoilAnalysis():
-    def __init__(self, airfoil_file, re=1e5,mach=0.0,iter=50):
-        try:
-            f = open(airfoil_file,'r')
-        except:
-            print 'There was an error opening the airfoil file %s'%(airfoil_file)
-            sys.exit(1)
+    def __init__(self, airfoil_file, re=1e5,mach=0.0,iter=50, x=None, y=None):
+
+        if x == None:
+            try:
+                f = open(airfoil_file,'r')
+            except:
+                print 'There was an error opening the airfoil file %s'%(airfoil_file)
+                sys.exit(1)
         # end if
 
 
@@ -70,22 +72,22 @@ class xfoilAnalysis():
         # self.setCoordinates(self.x, self.y)
         # self.setCoordinatesComplex(self.x, self.y)
 
+            # Read the airfoil file
+            x = []
+            y = []
+            for line in f:
+                try:
+                    x.append(float(string.split(line)[0]))
+                    y.append(float(string.split(line)[1]))
+                    # x.append(complex(string.split(line)[0]))
+                    # y.append(complex(string.split(line)[1]))
+                except:
+                    pass
+            f.close()
         self.re = re
         self.mach = mach
         self.iter = iter
 
-        # Read the airfoil file
-        x = []
-        y = []
-        for line in f:
-            try:
-                x.append(float(string.split(line)[0]))
-                y.append(float(string.split(line)[1]))
-                # x.append(complex(string.split(line)[0]))
-                # y.append(complex(string.split(line)[1]))
-            except:
-                pass
-        f.close()
         # end if
         # for i in range(len(airfoil_file[0])):
         #     x.append(airfoil_file[0][i])

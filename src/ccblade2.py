@@ -4,10 +4,10 @@ import warnings
 from math import cos, sin, pi, sqrt, acos, exp, factorial
 import numpy as np
 import _bem
-from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel, ParallelGroup
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel, ParallelGroup, DumpRecorder
 from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from openmdao.core.mpi_wrap import MPI
-from zope.interface import Interface, implements
+# from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
 from airfoilprep_free import Airfoil
 from brent import Brent
@@ -69,7 +69,7 @@ class WindComponents(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
         self.add_param('theta', val=np.zeros(n))
 
     def solve_nonlinear(self, params, unknowns, resids):
@@ -171,7 +171,7 @@ class FlowCondition(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
 
@@ -251,6 +251,23 @@ class FlowCondition(Component):
 
         return J
 
+class deMUX(Component):
+    def __init__(self, n, i):
+        super(deMUX, self).__init__()
+        self.add_param('airfoil_parameterization', val=np.zeros((n, 8)))
+        for i in range(n):
+            self.add_output('airfoil'+str(i), val=np.zeros(8))
+        self.n = n
+    def solve_nonlinear(self, params, unknowns, resids):
+        for i in range(self.n):
+            unknowns['airfoil'+str(i)] = params['airfoil_parameterization'][i]
+
+    def linearize(self, params, unknowns, resids):
+        J ={}
+        for i in range(self.n):
+            J['airfoil'+str(i), 'airfoil_parameterization'] = n
+        return J
+
 class AirfoilComp(Component):
     """
     AirfoilComp
@@ -264,7 +281,7 @@ class AirfoilComp(Component):
         super(AirfoilComp, self).__init__()
         self.add_param('alpha_sub', shape=1)
         self.add_param('Re_sub', shape=1)
-        self.add_param('airfoil_parameterization', val=np.zeros((n, 8))) #, pass_by_obj=True)
+        self.add_param('airfoil_parameterization', val=np.zeros((17, 8))) #, pass_by_obj=True)
         self.add_param('airfoil_analysis_options', val={}, pass_by_obj=True)
 
         self.add_output('cl_sub', shape=1)
@@ -276,16 +293,16 @@ class AirfoilComp(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
         self.i = i
+        self.n = n
 
-    def airfoil_parameterization_methodology(self, CST, alpha, Re):
+    def airfoil_parameterization_methodology(self, CST, alpha, Re, FDorCS):
         self.af = Airfoil.initFromCST(CST, [alpha], [Re])
         alpha, Re, cl, cd, cm = self.af.createDataGrid()
         global function_calls_XFOIL
         function_calls_XFOIL += 1
-        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.xfoilFlowGradients(CST, alpha, Re)
-        # dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = 0.0, 0.0, 0.0, 0.0
+        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.xfoilFlowGradients(CST, alpha, Re, FDorCS)
         return cl, cd, dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
     def airfoil_parameterization_methodology_dv(self, CST, alpha, Re, CFDorXFOIL, iterations, processors, FDorCS):
@@ -296,16 +313,13 @@ class AirfoilComp(Component):
         return cl, cd, dcl_dcst, dcd_dcst
 
     def solve_nonlinear(self, params, unknowns, resids):
-        # unknowns['cl_sub'], unknowns['cd_sub'] = params['af'][self.i].evaluate(params['alpha_sub'], params['Re_sub'])
-        # unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = params['af'][self.i].derivatives(params['alpha_sub'], params['Re_sub'])
+        FDorCS = params['airfoil_analysis_options']['FDorCS']
         if self.i == 0:
             unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = 0.0, 0.50, 0.0, 0.0, 0.0, 0.0
         elif self.i == 1:
             unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = 0.0, 0.35, 0.0, 0.0, 0.0, 0.0
         else:
-            unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = self.airfoil_parameterization_methodology(params['airfoil_parameterization'][self.i], params['alpha_sub'], params['Re_sub'])
-        # airfoil_analysis = params['airfoil_analysis_options']
-        # cl, cd, dcl_dcst, dcd_dcst = self.airfoil_parameterization_methodology_dv(params['airfoil_parameterization'][self.i], params['alpha_sub'], params['Re_sub'], airfoil_analysis['CFDorXFOIL'], airfoil_analysis['iterations'], airfoil_analysis['processors'], airfoil_analysis['FDorCS'])
+            unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = self.airfoil_parameterization_methodology(params['airfoil_parameterization'][self.i], params['alpha_sub'], params['Re_sub'], FDorCS)
 
     def list_deriv_vars(self):
         inputs = ('alpha_sub', 'Re_sub')
@@ -315,17 +329,26 @@ class AirfoilComp(Component):
     def linearize(self, params, unknowns, resids):
         J = {}
         airfoil_analysis = params['airfoil_analysis_options']
-        cl, cd, dcl_dcst, dcd_dcst = self.airfoil_parameterization_methodology_dv(params['airfoil_parameterization'][self.i], params['alpha_sub'], params['Re_sub'], airfoil_analysis['CFDorXFOIL'], airfoil_analysis['iterations'], airfoil_analysis['processors'], airfoil_analysis['FDorCS'])
+        if self.i == 0:
+            cl, cd, dcl_dcst, dcd_dcst = 0.0, 0.50, np.zeros((8, 1)), np.zeros((8, 1))
+        elif self.i == 1:
+            cl, cd, dcl_dcst, dcd_dcst = 0.0, 0.35, np.zeros((8, 1)), np.zeros((8, 1))
+        else:
+            cl, cd, dcl_dcst, dcd_dcst = self.airfoil_parameterization_methodology_dv(params['airfoil_parameterization'][self.i], params['alpha_sub'], params['Re_sub'], airfoil_analysis['CFDorXFOIL'], airfoil_analysis['iterations'], airfoil_analysis['processors'], airfoil_analysis['FDorCS'])
         unknowns['cl_sub'], unknowns['cd_sub'] = cl, cd
+        zero_cl = np.zeros((1, self.n * 8))
+        zero_cd = np.zeros((1, self.n * 8))
+        for i in range(8):
+            zero_cl[0][i+self.i*8] = dcl_dcst[i]
+            zero_cd[0][i+self.i*8] = dcd_dcst[i]
+
         J['cl_sub', 'alpha_sub'] = unknowns['dcl_dalpha']
         J['cl_sub', 'Re_sub'] = unknowns['dcl_dRe']
-        J['cl_sub', 'airfoil_parameterization'] = dcl_dcst
+        J['cl_sub', 'airfoil_parameterization'] = zero_cl
         J['cd_sub', 'alpha_sub'] = unknowns['dcd_dalpha']
         J['cd_sub', 'Re_sub'] = unknowns['dcd_dRe']
-        J['cd_sub', 'airfoil_parameterization'] = dcd_dcst
+        J['cd_sub', 'airfoil_parameterization'] = zero_cd
         return J
-
-
 
 class BEM(Component):
     """
@@ -371,7 +394,7 @@ class BEM(Component):
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
         self.i = i
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
         r = params['r']
@@ -1007,6 +1030,77 @@ class CCEvaluate(Component):
 
         return J
 
+class Loads_for_RotorSE(Component):
+    def __init__(self, n):
+        super(Loads_for_RotorSE, self).__init__()
+        self.add_param('Rhub', shape=1)
+        self.add_param('r', val=np.zeros(n))
+        self.add_param('Rtip', shape=1)
+        self.add_param('Np', shape=n)
+        self.add_param('Tp', shape=n)
+
+        self.add_output('loads:r', shape=n+2, units='m', desc='radial positions along blade going toward tip')
+        self.add_output('loads:Px', shape=n+2, units='N/m', desc='distributed loads in blade-aligned x-direction')
+        self.add_output('loads:Py', shape=n+2, units='N/m', desc='distributed loads in blade-aligned y-direction')
+        self.add_output('loads:Pz', shape=n+2, units='N/m', desc='distributed loads in blade-aligned z-direction')
+
+        # corresponding setting for loads
+        self.add_output('loads:V', shape=1, units='m/s', desc='hub height wind speed')
+        self.add_output('loads:Omega', shape=1, units='rpm', desc='rotor rotation speed')
+        self.add_output('loads:pitch', shape=1, units='deg', desc='pitch angle')
+        self.add_output('loads:azimuth', shape=1, units='deg', desc='azimuthal angle')
+
+        self.n = n
+
+    def solve_nonlinear(self, params, unknowns, resids):
+
+        unknowns['loads:r'] = np.concatenate([[params['Rhub']], params['r'], [params['Rtip']]])
+        Np = np.concatenate([[0.0], params['Np'], [0.0]])
+        Tp = np.concatenate([[0.0], params['Tp'], [0.0]])
+
+        # conform to blade-aligned coordinate system
+        unknowns['loads:Px'] = Np
+        unknowns['loads:Py'] = -Tp
+        unknowns['loads:Pz'] = 0*Np
+
+        # return other outputs needed
+        unknowns['loads:V'] = params['Uinf']
+        unknowns['loads:Omega'] = params['Omega']
+        unknowns['loads:pitch'] = params['pitch']
+        unknowns['loads:azimuth'] = params['azimuth']
+
+    def linearize(self, params, unknowns, resids):
+        n = self.n
+
+        dr_dr = np.vstack([np.zeros(n), np.eye(n), np.zeros(n)])
+        dr_dRhub = np.zeros(n+2)
+        dr_dRtip = np.zeros(n+2)
+        dr_dRhub[0] = 1.0
+        dr_dRtip[-1] = 1.0
+
+        dV = np.zeros(4*n+10)
+        dV[3*n+6] = 1.0
+        dOmega = np.zeros(4*n+10)
+        dOmega[3*n+7] = 1.0
+        dpitch = np.zeros(4*n+10)
+        dpitch[3*n+8] = 1.0
+        dazimuth = np.zeros(4*n+10)
+        dazimuth[3*n+9] = 1.0
+
+        J = {}
+        zero = np.zeros(17)
+        J['loads:r', 'r'] = dr_dr
+        J['loads:r', 'Rhub'] = dr_dRhub
+        J['loads:r', 'Rtip'] = dr_dRtip
+        J['loads:Px', 'Np'] = np.vstack([zero, np.eye(n), zero])
+        J['loads:Py', 'Tp'] = np.vstack([zero, -np.eye(n), zero])
+        J['loads:V', 'Uinf'] = 1.0
+        J['loads:Omega', 'Omega'] = 1.0
+        J['loads:pitch', 'pitch'] = 1.0
+        J['loads:azimuth', 'azimuth'] = 1.0
+
+        return J
+
 
 class BrentGroup(Group):
     def __init__(self, n, i):
@@ -1039,7 +1133,7 @@ class BrentGroup(Group):
         sub.nl_solver.options['lower_bound'] = phi_lower
         sub.nl_solver.options['upper_bound'] = phi_upper
         sub.nl_solver.options['state_var'] = 'phi_sub'
-        self.fd_options['force_fd'] = True
+        # self.fd_options['force_fd'] = True
 
     def list_deriv_vars(self):
 
@@ -1088,79 +1182,7 @@ class Loads(Group):
             self.connect('brent'+str(i+1)+'.cd_sub', 'cd'+str(i+1))
             self.connect('brent'+str(i+1)+'.W_sub', 'W'+str(i+1))
         self.add('loads', DistributedAeroLoads(n), promotes=['*'])
-        self.add('obj_cmp', ExecComp('obj = -max(Np)', Np=np.zeros(17)), promotes=['*'])
-
-class Loads_for_RotorSE(Component):
-    def __init__(self, n):
-        super(Loads_for_RotorSE, self).__init__()
-        self.add_param('Rhub', shape=1)
-        self.add_param('r', val=np.zeros(n))
-        self.add_param('Rtip', shape=1)
-        self.add_param('Np', shape=n)
-        self.add_param('Tp', shape=n)
-
-        self.add_output('loads:r', shape=n+2, units='m', desc='radial positions along blade going toward tip')
-        self.add_output('loads:Px', shape=n+2, units='N/m', desc='distributed loads in blade-aligned x-direction')
-        self.add_output('loads:Py', shape=n+2, units='N/m', desc='distributed loads in blade-aligned y-direction')
-        self.add_output('loads:Pz', shape=n+2, units='N/m', desc='distributed loads in blade-aligned z-direction')
-
-        # corresponding setting for loads
-        self.add_output('loads:V', shape=1, units='m/s', desc='hub height wind speed')
-        self.add_output('loads:Omega', shape=1, units='rpm', desc='rotor rotation speed')
-        self.add_output('loads:pitch', shape=1, units='deg', desc='pitch angle')
-        self.add_output('loads:azimuth', shape=1, units='deg', desc='azimuthal angle')
-
-        self.n = n
-
-    def solve_nonlinear(self, params, unknowns, resids):
-
-        unknowns['loads:r'] = np.concatenate([[params['Rhub']], params['r'], [params['Rtip']]])
-        Np = np.concatenate([[0.0], params['Np'], [0.0]])
-        Tp = np.concatenate([[0.0], params['Tp'], [0.0]])
-
-        # conform to blade-aligned coordinate system
-        unknowns['loads:Px'] = Np
-        unknowns['loads:Py'] = -Tp
-        unknowns['loads:Pz'] = 0*Np
-
-        # return other outputs needed
-        unknowns['loads:V'] = params['Uinf']
-        unknowns['loads:Omega'] = params['Omega']
-        unknowns['loads:pitch'] = params['pitch']
-        unknowns['loads:azimuth'] = params['azimuth']
-
-    def linearize(self, params, unknowns, resids):
-        J = {}
-        n = self.n
-
-        dr_dr = vstack([np.zeros(n), np.eye(n), np.zeros(n)])
-        dr_dRhub = np.zeros(n+2)
-        dr_dRtip = np.zeros(n+2)
-        dr_dRhub[0] = 1.0
-        dr_dRtip[-1] = 1.0
-
-        dV = np.zeros(4*n+10)
-        dV[3*n+6] = 1.0
-        dOmega = np.zeros(4*n+10)
-        dOmega[3*n+7] = 1.0
-        dpitch = np.zeros(4*n+10)
-        dpitch[3*n+8] = 1.0
-        dazimuth = np.zeros(4*n+10)
-        dazimuth[3*n+9] = 1.0
-
-        J = {}
-        zero = np.zeros(17)
-        J['loads:r', 'r'] = dr_dr
-        J['loads:r', 'Rhub'] = dr_dRhub
-        J['loads:r', 'Rtip'] = dr_dRtip
-        J['loads:Px', 'Np'] = np.vstack([zero, np.eye(n), zero])
-        J['loads:Py', 'Tp'] = np.vstack([zero, -np.eye(n), zero])
-        J['loads:V', 'Uinf'] = 1.0
-        J['loads:Omega', 'Omega'] = 1.0
-        J['loads:pitch', 'pitch'] = 1.0
-        J['loads:azimuth', 'azimuth'] = 1.0
-
-        return J
+        self.add('obj_cmp', ExecComp('obj = -max(Np)', Np=np.zeros(n)), promotes=['*'])
 
 class LoadsGroup_to_RotorSE(Group):
     def __init__(self, n):
@@ -1180,8 +1202,6 @@ class LoadsGroup_to_RotorSE(Group):
             self.connect('brent'+str(i+1)+'.cd_sub', 'cd'+str(i+1))
             self.connect('brent'+str(i+1)+'.W_sub', 'W'+str(i+1))
         self.add('loads', DistributedAeroLoads(n), promotes=['*'])
-        # self.add('obj_cmp', ExecComp('obj = -max(Np)', Np=np.zeros(17)), promotes=['*'])
-
 
 class Sweep(Group):
     def __init__(self, azimuth, n):
@@ -1203,14 +1223,11 @@ class SweepGroup(Group):
     def __init__(self, nSector, n):
         super(SweepGroup, self).__init__()
         self.add('init', CCInit(), promotes=['*'])
-
         for i in range(nSector):
             azimuth = pi/180.0*360.0*float(i)/nSector
             self.add('group'+str(i+1), Sweep(azimuth, n), promotes=['r', 'Uinf', 'pitch', 'Rtip', 'Omega', 'chord', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'B', 'bemoptions', 'airfoil_parameterization', 'airfoil_analysis_options'])
 
-
 class FlowSweep(Group):
-
     def __init__(self, nSector, n):
         super(FlowSweep, self).__init__()
         self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'r', 'chord',  'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'precone', 'tilt', 'yaw', 'shearExp', 'hubHt', 'B', 'airfoil_parameterization', 'airfoil_analysis_options', 'bemoptions'])
@@ -1220,14 +1237,11 @@ class FlowSweep(Group):
             self.connect('load_group.group' + str(i+1) + '.loads.Tp', 'eval.Tp' + str(i+1))
 
 class CCBlade(Group):
-
     def __init__(self, nSector, n, n2):
         super(CCBlade, self).__init__()
-
         self.add('Uinf', IndepVarComp('Uinf', np.zeros(n2)), promotes=['*'])
         self.add('pitch', IndepVarComp('pitch', np.zeros(n2)), promotes=['*'])
         self.add('Omega', IndepVarComp('Omega', np.zeros(n2)), promotes=['*'])
-
         self.add('r', IndepVarComp('r', np.zeros(n)), promotes=['*'])
         self.add('chord', IndepVarComp('chord', np.zeros(n)), promotes=['*'])
         self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
@@ -1251,7 +1265,6 @@ class CCBlade(Group):
         self.add('nSector', IndepVarComp('nSector', 4, pass_by_obj=True), promotes=['*'])
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
         self.add('mux_power', MUX_POWER(n2), promotes=['*'])
-
         pg = self.add('parallel', ParallelGroup(), promotes=['*'])
         for i in range(n2):
             pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'airfoil_parameterization', 'airfoil_analysis_options', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord'])
@@ -1275,7 +1288,6 @@ class CCBlade_to_RotorSE_connection(Group):
 
     def __init__(self, run_case, nSector, n, n2):
         super(CCBlade_to_RotorSE_connection, self).__init__()
-
         if run_case == 'power':
             self.add('mux_power', MUX_POWER(n2), promotes=['*'])
             pg = self.add('parallel', ParallelGroup(), promotes=['*'])
@@ -1434,88 +1446,106 @@ if __name__ == "__main__":
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     azimuth = 90.
     n = len(r)
-    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0)
-    ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
+    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
 
     #### Test LoadsGroup
-    # loads = Problem(impl=impl)
-    # root = loads.root = Loads(n)
-    # loads.setup(check=False)
-    #
-    # loads['Rhub'] = Rhub
-    # loads['Rtip'] = Rtip
-    # loads['r'] = r
-    # loads['chord'] = chord
-    # loads['theta'] = np.radians(theta)
-    # loads['rho'] = rho
-    # loads['mu'] = mu
-    # loads['tilt'] = np.radians(tilt)
-    # loads['precone'] = np.radians(precone)
-    # loads['yaw'] = np.radians(yaw)
-    # loads['shearExp'] = shearExp
-    # loads['hubHt'] = hubHt
-    # loads['Uinf'] = Uinf
-    # loads['Omega'] = Omega
-    # loads['pitch'] = np.radians(pitch)
-    # loads['azimuth'] = np.radians(azimuth)
-    # loads['af'] = af
-    # loads['bemoptions'] = bemoptions
-    #
-    # loads.run()
-    #
-    # print 'Np', loads['Np']
-    # print 'Tp', loads['Tp']
+    loads = Problem(impl=impl)
+    root = loads.root = Loads(n)
 
-    ##### Test CCBlade
-    Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
-    tsr = 7.55
-    pitch = np.array([0.0, 0.0])
-    Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
-    n2 = len(Uinf)
+    loads.driver = pyOptSparseDriver()
+    loads.driver.options['optimizer'] = 'SNOPT'
+    loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # ccblade.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
+    loads.driver.add_objective('obj')
 
-    ccblade = Problem(impl=impl)
-    ccblade.root = CCBlade(nSector, n, n2)
+    recorder = DumpRecorder('optimization.log')
+    # adding specific includes works, but leaving it out results in a crash
+    # recorder.options['includes'] = ['x']
+    loads.driver.add_recorder(recorder)
 
-    ### SETUP OPTIMIZATION
-    # ccblade.driver = pyOptSparseDriver()
-    # ccblade.driver.options['optimizer'] = 'SNOPT'
-    # ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
-    # # ccblade.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
-    # ccblade.driver.add_objective('obj')
     # recorder = SqliteRecorder('recorder')
     # recorder.options['record_params'] = True
     # recorder.options['record_metadata'] = True
     # ccblade.driver.add_recorder(recorder)
 
-    ccblade.setup(check=False)
 
-    ccblade['Rhub'] = Rhub
-    ccblade['Rtip'] = Rtip
-    ccblade['r'] = r
-    ccblade['chord'] = chord
-    ccblade['theta'] = np.radians(theta)
-    ccblade['B'] = B
-    ccblade['rho'] = rho
-    ccblade['mu'] = mu
-    ccblade['tilt'] = np.radians(tilt)
-    ccblade['precone'] = np.radians(precone)
-    ccblade['yaw'] = np.radians(yaw)
-    ccblade['shearExp'] = shearExp
-    ccblade['hubHt'] = hubHt
-    ccblade['nSector'] = nSector
-    ccblade['Uinf'] = Uinf
-    ccblade['Omega'] = Omega
-    ccblade['pitch'] = np.radians(pitch)
-    ccblade['airfoil_parameterization'] = CST
-    ccblade['bemoptions'] = bemoptions
-    ccblade['airfoil_analysis_options'] = airfoil_analysis_options
+    loads.setup(check=False)
 
-    # import time
-    # t0 = time.time()
-    ccblade.run()
-    # t = time.time()
-    # print t - t0
+    loads['Rhub'] = Rhub
+    loads['Rtip'] = Rtip
+    loads['r'] = r
+    loads['chord'] = chord
+    loads['theta'] = np.radians(theta)
+    loads['rho'] = rho
+    loads['mu'] = mu
+    loads['tilt'] = np.radians(tilt)
+    loads['precone'] = np.radians(precone)
+    loads['yaw'] = np.radians(yaw)
+    loads['shearExp'] = shearExp
+    loads['hubHt'] = hubHt
+    loads['Uinf'] = Uinf
+    loads['Omega'] = Omega
+    loads['pitch'] = np.radians(pitch)
+    loads['azimuth'] = np.radians(azimuth)
+    loads['airfoil_parameterization'] = CST
+    loads['bemoptions'] = bemoptions
+    loads['airfoil_analysis_options'] = airfoil_analysis_options
 
-    print 'CP', ccblade['CP']
-    print 'CT', ccblade['CT']
-    print 'CQ', ccblade['CQ']
+    loads.run()
+
+    print 'Np', loads['Np']
+    print 'Tp', loads['Tp']
+
+    ##### Test CCBlade
+    # Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
+    # tsr = 7.55
+    # pitch = np.array([0.0, 0.0])
+    # Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
+    # n2 = len(Uinf)
+    #
+    # ccblade = Problem(impl=impl)
+    # ccblade.root = CCBlade(nSector, n, n2)
+    #
+    # ### SETUP OPTIMIZATION
+    # # ccblade.driver = pyOptSparseDriver()
+    # # ccblade.driver.options['optimizer'] = 'SNOPT'
+    # # ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # # # ccblade.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
+    # # ccblade.driver.add_objective('obj')
+    # # recorder = SqliteRecorder('recorder')
+    # # recorder.options['record_params'] = True
+    # # recorder.options['record_metadata'] = True
+    # # ccblade.driver.add_recorder(recorder)
+    #
+    # ccblade.setup(check=False)
+    #
+    # ccblade['Rhub'] = Rhub
+    # ccblade['Rtip'] = Rtip
+    # ccblade['r'] = r
+    # ccblade['chord'] = chord
+    # ccblade['theta'] = np.radians(theta)
+    # ccblade['B'] = B
+    # ccblade['rho'] = rho
+    # ccblade['mu'] = mu
+    # ccblade['tilt'] = np.radians(tilt)
+    # ccblade['precone'] = np.radians(precone)
+    # ccblade['yaw'] = np.radians(yaw)
+    # ccblade['shearExp'] = shearExp
+    # ccblade['hubHt'] = hubHt
+    # ccblade['nSector'] = nSector
+    # ccblade['Uinf'] = Uinf
+    # ccblade['Omega'] = Omega
+    # ccblade['pitch'] = np.radians(pitch)
+    # ccblade['airfoil_parameterization'] = CST
+    # ccblade['bemoptions'] = bemoptions
+    # ccblade['airfoil_analysis_options'] = airfoil_analysis_options
+    #
+    # # import time
+    # # t0 = time.time()
+    # ccblade.run()
+    # # t = time.time()
+    # # print t - t0
+    #
+    # print 'CP', ccblade['CP']
+    # print 'CT', ccblade['CT']
+    # print 'CQ', ccblade['CQ']

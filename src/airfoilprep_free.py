@@ -514,7 +514,6 @@ class Polar(object):
 
         return figs
 
-
 class Airfoil(object):
     """A collection of Polar objects at different Reynolds numbers
 
@@ -621,8 +620,8 @@ class Airfoil(object):
 
         for i in range(len(CoordinateFile)):
             # read in coordinate file
-            with suppress_stdout_stderr():
-                airfoil = pyXLIGHT.xfoilAnalysis(CoordinateFile[i])
+            # with suppress_stdout_stderr():
+            airfoil = pyXLIGHT.xfoilAnalysis(CoordinateFile[i])
             airfoil.re = Re
             airfoil.mach = 0.00
             airfoil.iter = 1000
@@ -638,6 +637,7 @@ class Airfoil(object):
                 if lexitflag:
                     cl[j] = -10.0
                     cd[j] = 0.0
+                    print "XFOIL FAILURE"
             # error handling in case of XFOIL failure
             for k in range(len(cl)):
                 if cl[k] == -10.0:
@@ -708,8 +708,8 @@ class Airfoil(object):
             coord_file.close()
 
             # read in coordinate file
-            with suppress_stdout_stderr():
-                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            # with suppress_stdout_stderr():
+            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
             airfoil.re = Re
             airfoil.mach = 0.00
             airfoil.iter = 1000
@@ -724,6 +724,7 @@ class Airfoil(object):
                 if lexitflag:
                     cl[j] = -10.0
                     cd[j] = 0.0
+                    print "XFOIL FAILURE"
             # error handling in case of XFOIL failure
             for k in range(len(cl)):
                 if cl[k] == -10.0:
@@ -770,33 +771,6 @@ class Airfoil(object):
         # initialize
         polars = []
 
-        def __ClassShape(w, x, N1, N2, dz):
-
-            # Class function; taking input of N1 and N2
-            C = np.zeros(len(x))
-            for i in range(len(x)):
-                C[i] = x[i]**N1*((1-x[i])**N2)
-
-            # Shape function; using Bernstein Polynomials
-            n = len(w) - 1  # Order of Bernstein polynomials
-
-            K = np.zeros(n+1)
-            for i in range(0, n+1):
-                K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
-
-            S = np.zeros(len(x))
-            for i in range(len(x)):
-                S[i] = 0
-                for j in range(0, n+1):
-                    S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
-
-            # Calculate y output
-            y = np.zeros(len(x))
-            for i in range(len(y)):
-                y[i] = C[i] * S[i] + x[i] * dz
-
-            return y
-
         try:
             n1 = len(CST[0])/2
             n2 = len(CST)
@@ -804,24 +778,10 @@ class Airfoil(object):
             n2 = 1
             n1 = len(CST)/2
             CST = np.array([CST])
+
+
         for i in range(n2):
-            wu = np.zeros(n1)
-            wl = np.zeros(n1)
-            for j in range(n1):
-                wu[j] = CST[i][j]
-                wl[j] = CST[i][j + n1]
-            # wu, wl = np.split(af_parameters[i], 2)
-            w1 = np.average(wl)
-            w2 = np.average(wu)
-            if w1 < w2:
-                pass
-            else:
-                higher = wl
-                lower = wu
-                wl = lower
-                wu = higher
-            N = 120
-            dz = 0.
+            wl, wu, N, dz = CST_to_kulfan(CST[0])
 
             # Populate x coordinates
             x = np.ones((N, 1))
@@ -850,8 +810,8 @@ class Airfoil(object):
             for z in range(len(xu)):
                 xu[z] = np.real(x[z + zerind])   # Upper surface x-coordinates
 
-            yl = __ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
-            yu = __ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+            yl = ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+            yu = ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
 
             y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
             y = y[::-1]
@@ -874,8 +834,8 @@ class Airfoil(object):
             coord_file.close()
 
             # read in coordinate file
-            with suppress_stdout_stderr():
-                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            # with suppress_stdout_stderr():
+            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
             airfoil.re = Re
             airfoil.mach = 0.00
             airfoil.iter = 1000
@@ -890,6 +850,7 @@ class Airfoil(object):
                 if lexitflag:
                     cl[j] = -10.0
                     cd[j] = 0.0
+                    print "XFOIL FAILURE"
 
             # error handling in case of XFOIL failure
             # for k in range(len(cl)):
@@ -1091,10 +1052,6 @@ class Airfoil(object):
 
         return Airfoil(polars)
 
-
-
-
-
     def writeToAerodynFile(self, filename):
         """Write the airfoil section data to a file using AeroDyn input file style.
 
@@ -1226,40 +1183,56 @@ class Airfoil(object):
             return y
 
     @classmethod
-    def xfoilFlowGradients(self, CST, alpha, Re):
+    def xfoilFlowGradients(self, CST, alpha, Re, FDorCS):
 
-        step_size = 1e-20
-        cs_step = complex(0, step_size)
-
+        x, y = cst_to_coordinates(CST)
         # read in coordinate file
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
         airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates.dat'
         # TODO: Check to make sure the right file is being read
-        with suppress_stdout_stderr():
-            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+        # with suppress_stdout_stderr():
+        airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
         airfoil.re = Re
         airfoil.mach = 0.00
         airfoil.iter = 1000
 
-        # cl, cd, cm, lexitflag = airfoil.solveAlpha(alpha)
-        # if lexitflag:
-        #     cl = -10.0
-        #     cd = 0.0
-        cl_alpha, cd_alpha, cm, lexitflag = airfoil.solveAlphaComplex(alpha+cs_step)
-        if lexitflag:
-            cl_alpha = -10.0
-            cd_alpha = 0.0
-        # TODO: CHECK EQUATION FOR COMPLEX STEP
-        dcl_dalpha = np.imag(cl_alpha)/np.imag(cs_step)
-        dcd_dalpha = np.imag(cd_alpha)/np.imag(cs_step)
+        if FDorCS == 'CS':
+            step_size = 1e-20
+            cs_step = complex(0, step_size)
+            angle = alpha+cs_step
+            cl_alpha, cd_alpha, cm, lexitflag = airfoil.solveAlphaComplex(angle)
+            if lexitflag:
+                cl_alpha = -10.0
+                cd_alpha = 0.0
+            dcl_dalpha = np.imag(cl_alpha)/np.imag(cs_step)
+            dcd_dalpha = np.imag(cd_alpha)/np.imag(cs_step)
 
-        airfoil.re = Re[0][0] + cs_step
-        cl_Re, cd_Re, cm, lexitflag = airfoil.solveAlphaComplex(alpha)
-        if lexitflag:
-            cl_Re = -10.0
-            cd_Re = 0.0
-        dcl_dRe = np.imag(cl_Re)/np.imag(cs_step)
-        dcd_dRe = np.imag(cd_Re)/np.imag(cs_step)
+            airfoil.re = Re[0][0] + cs_step
+            cl_Re, cd_Re, cm, lexitflag = airfoil.solveAlphaComplex(alpha)
+            if lexitflag:
+                cl_Re = -10.0
+                cd_Re = 0.0
+            dcl_dRe = np.imag(cl_Re)/np.imag(cs_step)
+            dcd_dRe = np.imag(cd_Re)/np.imag(cs_step)
+        else:
+            cl, cd, cm, lexitflag = airfoil.solveAlpha(alpha)
+            step_size = 1e-6
+            fd_step = step_size
+            angle = alpha+fd_step
+            cl_alpha, cd_alpha, cm, lexitflag = airfoil.solveAlpha(angle)
+            if lexitflag:
+                cl_alpha = -10.0
+                cd_alpha = 0.0
+            dcl_dalpha = (cl_alpha - cl) / fd_step
+            dcd_dalpha = (cd_alpha - cd) / fd_step
+
+            airfoil.re = Re[0][0] + fd_step
+            cl_Re, cd_Re, cm, lexitflag = airfoil.solveAlphaComplex(alpha)
+            if lexitflag:
+                cl_Re = -10.0
+                cd_Re = 0.0
+            dcl_dRe = (cl_alpha - cl) / fd_step
+            dcd_dRe = (cl_alpha - cl) / fd_step
 
         return dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
@@ -1299,8 +1272,8 @@ class Airfoil(object):
             for z in range(len(xu)):
                 xu[z] = x[z + zerind][0]   # Upper surface x-coordinates
 
-            yl = __ClassShapeComplex(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
-            yu = __ClassShapeComplex(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+            yl = ClassShapeComplex(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+            yu = ClassShapeComplex(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
 
             y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
             y = y[::-1]
@@ -1323,10 +1296,10 @@ class Airfoil(object):
             coord_file.close()
 
             # read in coordinate file
-            with suppress_stdout_stderr():
-                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            # with suppress_stdout_stderr():
+            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
             airfoil.re = Re
-            airfoil.mach = Uinf / 340.29
+            airfoil.mach = 0.0 # Uinf / 340.29
             airfoil.iter = 1000
 
             angle = alpha
@@ -1334,6 +1307,7 @@ class Airfoil(object):
             if lexitflag:
                 cl = -10.0
                 cd = 0.0
+                print "XFOIL FAILURE"
             return cl, cd
             # error handling in case of XFOIL failure
             # for k in range(len(cl)):
@@ -1354,59 +1328,6 @@ class Airfoil(object):
             # alphas = np.delete(alphas, to_delete)
 
             # polars.append(polarType(Re, alphas, cl, cd, cm))
-        def __ClassShape(w, x, N1, N2, dz):
-
-            # Class function; taking input of N1 and N2
-            C = np.zeros(len(x))
-            for i in range(len(x)):
-                C[i] = x[i]**N1*((1-x[i])**N2)
-
-            # Shape function; using Bernstein Polynomials
-            n = len(w) - 1  # Order of Bernstein polynomials
-
-            K = np.zeros(n+1)
-            for i in range(0, n+1):
-                K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
-
-            S = np.zeros(len(x))
-            for i in range(len(x)):
-                S[i] = 0
-                for j in range(0, n+1):
-                    S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
-
-            # Calculate y output
-            y = np.zeros(len(x))
-            for i in range(len(y)):
-                y[i] = C[i] * S[i] + x[i] * dz
-
-            return y
-
-        def __ClassShapeComplex(w, x, N1, N2, dz):
-
-            # Class function; taking input of N1 and N2
-            C = np.zeros(len(x), dtype=complex)
-            for i in range(len(x)):
-                C[i] = x[i]**N1*((1-x[i])**N2)
-
-            # Shape function; using Bernstein Polynomials
-            n = len(w) - 1  # Order of Bernstein polynomials
-
-            K = np.zeros(n+1, dtype=complex)
-            for i in range(0, n+1):
-                K[i] = mpmath.factorial(n)/(mpmath.factorial(i)*(mpmath.factorial((n)-(i))))
-
-            S = np.zeros(len(x), dtype=complex)
-            for i in range(len(x)):
-                S[i] = 0
-                for j in range(0, n+1):
-                    S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
-
-            # Calculate y output
-            y = np.zeros(len(x), dtype=complex)
-            for i in range(len(y)):
-                y[i] = C[i] * S[i] + x[i] * dz
-
-            return y
 
         def cstReal(alpha, Re, wl, wu, N, dz, Uinf):
 
@@ -1437,8 +1358,8 @@ class Airfoil(object):
             for z in range(len(xu)):
                 xu[z] = x[z + zerind]   # Upper surface x-coordinates
 
-            yl = __ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
-            yu = __ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+            yl = ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+            yu = ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
 
             y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
             y = y[::-1]
@@ -1461,10 +1382,10 @@ class Airfoil(object):
             coord_file.close()
 
             # read in coordinate file
-            with suppress_stdout_stderr():
-                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file)
+            # with suppress_stdout_stderr():
+            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
             airfoil.re = Re
-            airfoil.mach = Uinf / 340.29
+            airfoil.mach = 0.0 #Uinf / 340.29
             airfoil.iter = 1000
 
             angle = alpha
@@ -1472,6 +1393,7 @@ class Airfoil(object):
             if lexitflag:
                 cl = -10.0
                 cd = 0.0
+                print "XFOIL FAILURE"
             return cl, cd
 
 
@@ -1505,17 +1427,17 @@ class Airfoil(object):
         step_size = 1e-20
         cs_step = complex(0, step_size)
         dcl_dcst, dcd_dcst = np.zeros(8), np.zeros(8)
-        cl, cd = cstReal(alpha, Re, wl, wu, N, dz, Uinf=10.0)
+        cl, cd = cstReal(alpha, Re, np.real(wl), np.real(wu), N, dz, Uinf=10.0)
 
         for i in range(len(wl)):
             wl_complex = wl.copy()
             wl_complex[i] += cs_step
-            cl_complex, cd_complex = cstComplex(alpha, Re, wl_complex, wu, N, dz)
+            cl_complex, cd_complex = cstComplex(alpha, Re, wl_complex, wu, N, dz, Uinf=10.0)
             dcl_dcst[i] = np.imag(cl_complex)/np.imag(cs_step)
             dcd_dcst[i] = np.imag(cd_complex)/np.imag(cs_step)
             wu_complex = wu.copy()
             wu_complex[i] += cs_step
-            cl_complex, cd_complex = cstComplex(alpha, Re, wl, wu_complex, N, dz)
+            cl_complex, cd_complex = cstComplex(alpha, Re, wl, wu_complex, N, dz, Uinf=10.0)
             dcl_dcst[i+4] = np.imag(cl_complex)/np.imag(cs_step)
             dcd_dcst[i+4] = np.imag(cd_complex)/np.imag(cs_step)
 
@@ -1527,58 +1449,11 @@ class Airfoil(object):
     @classmethod
     def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS, Uinf):
 
-        def __ClassShape(w, x, N1, N2, dz):
-
-            # Class function; taking input of N1 and N2
-            C = np.zeros(len(x))
-            for i in range(len(x)):
-                C[i] = x[i]**N1*((1-x[i])**N2)
-
-            # Shape function; using Bernstein Polynomials
-            n = len(w) - 1  # Order of Bernstein polynomials
-
-            K = np.zeros(n+1)
-            for i in range(0, n+1):
-                K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
-
-            S = np.zeros(len(x))
-            for i in range(len(x)):
-                S[i] = 0
-                for j in range(0, n+1):
-                    S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
-
-            # Calculate y output
-            y = np.zeros(len(x))
-            for i in range(len(y)):
-                y[i] = C[i] * S[i] + x[i] * dz
-
-            return y
-
         import os, sys, shutil, copy
         sys.path.append(os.environ['SU2_RUN'])
         import SU2
 
-        n2 = 1
-        n1 = len(CST)/2
-        CST = np.array([CST])
-        for i in range(n2):
-            wu = np.zeros(n1)
-            wl = np.zeros(n1)
-            for j in range(n1):
-                wu[j] = CST[i][j]
-                wl[j] = CST[i][j + n1]
-            # wu, wl = np.split(af_parameters[i], 2)
-            w1 = np.average(wl)
-            w2 = np.average(wu)
-            if w1 < w2:
-                pass
-            else:
-                higher = wl
-                lower = wu
-                wl = lower
-                wu = higher
-            N = 120
-            dz = 0.
+        wl, wu, N, dz = CST_to_kulfan(CST[0])
 
         # Populate x coordinates
         x = np.ones((N, 1))
@@ -1607,8 +1482,8 @@ class Airfoil(object):
         for z in range(len(xu)):
             xu[z] = x[z + zerind]   # Upper surface x-coordinates
 
-        yl = __ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
-        yu = __ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+        yl = ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+        yu = ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
 
         y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
         y = y[::-1]
@@ -1884,7 +1759,85 @@ class Airfoil(object):
         plt.show()
         return figs
 
-def cst_to_coordinates(wl, wu, N, dz):
+def CST_to_kulfan(CST):
+    n1 = len(CST)/2
+    # CST = np.array([CST])
+
+    wu = np.zeros(n1)
+    wl = np.zeros(n1)
+    for j in range(n1):
+        wu[j] = CST[j]
+        wl[j] = CST[j + n1]
+    # wu, wl = np.split(af_parameters[i], 2)
+    w1 = np.average(wl)
+    w2 = np.average(wu)
+    if w1 < w2:
+        pass
+    else:
+        higher = wl
+        lower = wu
+        wl = lower
+        wu = higher
+    N = 120
+    dz = 0.
+    return wl, wu, N, dz
+
+def ClassShape(w, x, N1, N2, dz):
+
+    # Class function; taking input of N1 and N2
+    C = np.zeros(len(x))
+    for i in range(len(x)):
+        C[i] = x[i]**N1*((1-x[i])**N2)
+
+    # Shape function; using Bernstein Polynomials
+    n = len(w) - 1  # Order of Bernstein polynomials
+
+    K = np.zeros(n+1)
+    for i in range(0, n+1):
+        K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
+
+    S = np.zeros(len(x))
+    for i in range(len(x)):
+        S[i] = 0
+        for j in range(0, n+1):
+            S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+
+    # Calculate y output
+    y = np.zeros(len(x))
+    for i in range(len(y)):
+        y[i] = C[i] * S[i] + x[i] * dz
+
+    return y
+
+def ClassShapeComplex(w, x, N1, N2, dz):
+
+    # Class function; taking input of N1 and N2
+    C = np.zeros(len(x), dtype=complex)
+    for i in range(len(x)):
+        C[i] = x[i]**N1*((1-x[i])**N2)
+
+    # Shape function; using Bernstein Polynomials
+    n = len(w) - 1  # Order of Bernstein polynomials
+
+    K = np.zeros(n+1, dtype=complex)
+    for i in range(0, n+1):
+        K[i] = mpmath.factorial(n)/(mpmath.factorial(i)*(mpmath.factorial((n)-(i))))
+
+    S = np.zeros(len(x), dtype=complex)
+    for i in range(len(x)):
+        S[i] = 0
+        for j in range(0, n+1):
+            S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+
+    # Calculate y output
+    y = np.zeros(len(x), dtype=complex)
+    for i in range(len(y)):
+        y[i] = C[i] * S[i] + x[i] * dz
+
+    return y
+
+def cst_to_coordinates(CST):
+    wl, wu, N, dz = CST_to_kulfan(CST)
     x = np.ones((N, 1))
     zeta = np.zeros((N, 1))
     for z in range(0, N):
@@ -1911,8 +1864,8 @@ def cst_to_coordinates(wl, wu, N, dz):
     for z in range(len(xu)):
         xu[z] = x[z + zerind]   # Upper surface x-coordinates
 
-    yl = __ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
-    yu = __ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+    yl = ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+    yu = ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
 
     y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
     y = y[::-1]
@@ -1952,8 +1905,8 @@ def cst_to_coordinates_complex(wl, wu, N, dz):
     for z in range(len(xu)):
         xu[z] = x[z + zerind][0]   # Upper surface x-coordinates
 
-    yl = __ClassShapeComplex(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
-    yu = __ClassShapeComplex(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+    yl = ClassShapeComplex(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+    yu = ClassShapeComplex(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
 
     y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
     y = y[::-1]
@@ -1965,111 +1918,47 @@ def cst_to_coordinates_complex(wl, wu, N, dz):
     x = x1
     return [x, y]
 
-def __ClassShape(w, x, N1, N2, dz):
 
-    # Class function; taking input of N1 and N2
-    C = np.zeros(len(x))
-    for i in range(len(x)):
-        C[i] = x[i]**N1*((1-x[i])**N2)
+def getCoordinates(CST):
+    wl, wu, N, dz = CST_to_kulfan(CST[0])
+    x = np.ones((N, 1))
+    zeta = np.zeros((N, 1))
+    for z in range(0, N):
+        zeta[z] = 2 * pi / N * z
+        if z == N - 1:
+            zeta[z] = 2.0 * pi
+        x[z] = 0.5*(cos(zeta[z])+1.0)
 
-    # Shape function; using Bernstein Polynomials
-    n = len(w) - 1  # Order of Bernstein polynomials
+    # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
+    N1 = 0.5
+    N2 = 1
 
-    K = np.zeros(n+1)
-    for i in range(0, n+1):
-        K[i] = factorial(n)/(factorial(i)*(factorial((n)-(i))))
+    try:
+        zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
+        zerind = zerind[0][0]
+    except:
+        zerind = N/2
 
-    S = np.zeros(len(x))
-    for i in range(len(x)):
-        S[i] = 0
-        for j in range(0, n+1):
-            S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
+    xl = np.zeros(zerind)
+    xu = np.zeros(N-zerind)
 
-    # Calculate y output
-    y = np.zeros(len(x))
-    for i in range(len(y)):
-        y[i] = C[i] * S[i] + x[i] * dz
+    for z in range(len(xl)):
+        xl[z] = x[z]        # Lower surface x-coordinates
+    for z in range(len(xu)):
+        xu[z] = x[z + zerind]   # Upper surface x-coordinates
 
-    return y
+    yl = ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+    yu = ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
 
-def __ClassShapeComplex(w, x, N1, N2, dz):
-
-    # Class function; taking input of N1 and N2
-    C = np.zeros(len(x), dtype=complex)
-    for i in range(len(x)):
-        C[i] = x[i]**N1*((1-x[i])**N2)
-
-    # Shape function; using Bernstein Polynomials
-    n = len(w) - 1  # Order of Bernstein polynomials
-
-    K = np.zeros(n+1, dtype=complex)
-    for i in range(0, n+1):
-        K[i] = mpmath.factorial(n)/(mpmath.factorial(i)*(mpmath.factorial((n)-(i))))
-
-    S = np.zeros(len(x), dtype=complex)
-    for i in range(len(x)):
-        S[i] = 0
-        for j in range(0, n+1):
-            S[i] += w[j]*K[j]*x[i]**(j) * ((1-x[i])**(n-(j)))
-
-    # Calculate y output
-    y = np.zeros(len(x), dtype=complex)
-    for i in range(len(y)):
-        y[i] = C[i] * S[i] + x[i] * dz
-
-    return y
-
-    # def evaluate(self, alpha, Re):
-    #     """Get lift/drag coefficient at the specified angle of attack and Reynolds number
-
-    #     Parameters
-    #     ----------
-    #     alpha : float (rad)
-    #         angle of attack (in Radians!)
-    #     Re : float
-    #         Reynolds number
-
-    #     Returns
-    #     -------
-    #     cl : float
-    #         lift coefficient
-    #     cd : float
-    #         drag coefficient
-
-    #     Notes
-    #     -----
-    #     Uses a spline so that output is continuously differentiable
-    #     also uses a small amount of smoothing to help remove spurious multiple solutions
-
-    #     """
-
-    #     # setup spline if necessary
-    #     if self.need_to_setup_spline:
-    #         alpha_v, Re_v, cl_M, cd_M = self.createDataGrid()
-    #         alpha_v = np.radians(alpha_v)
-
-    #         # special case if zero or one Reynolds number (need at least two for bivariate spline)
-    #         if len(Re_v) < 2:
-    #             Re_v = [1e1, 1e15]
-    #             cl_M = np.c_[cl_M, cl_M]
-    #             cd_M = np.c_[cd_M, cd_M]
-
-    #         kx = min(len(alpha_v)-1, 3)
-    #         ky = min(len(Re_v)-1, 3)
-
-    #         self.cl_spline = RectBivariateSpline(alpha_v, Re_v, cl_M, kx=kx, ky=ky, s=0.1)
-    #         self.cd_spline = RectBivariateSpline(alpha_v, Re_v, cd_M, kx=kx, ky=ky, s=0.001)
-    #         self.need_to_setup_spline = False
-
-    #     # evaluate spline --- index to make scalar
-
-    #     cl = self.cl_spline.ev(alpha, Re)[0]
-    #     cd = self.cd_spline.ev(alpha, Re)[0]
-
-    #     return cl, cd
-
-
-
+    y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
+    y = y[::-1]
+    # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
+    # coord = [x, y]
+    x1 = np.zeros(len(x))
+    for k in range(len(x)):
+        x1[k] = x[k][0]
+    x = x1
+    return xl, xu, yl, xu
 
 
 
