@@ -1450,104 +1450,105 @@ if __name__ == "__main__":
     airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='CFD', FDorCS='FD', iterations=20, processors=0)
 
     #### Test LoadsGroup
-    loads = Problem(impl=impl)
-    root = loads.root = Loads(n)
-
-    loads.driver = pyOptSparseDriver()
-    loads.driver.options['optimizer'] = 'SNOPT'
-    loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
-    # loads.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
-    loads.driver.add_objective('obj')
-
-    recorder = DumpRecorder('optimization2.log')
-    # adding specific includes works, but leaving it out results in a crash
-    # recorder.options['includes'] = ['x']
-    loads.driver.add_recorder(recorder)
-
-    # recorder = SqliteRecorder('recorder')
-    # recorder.options['record_params'] = True
-    # recorder.options['record_metadata'] = True
-    # ccblade.driver.add_recorder(recorder)
-
-
-    loads.setup(check=False)
-
-    loads['Rhub'] = Rhub
-    loads['Rtip'] = Rtip
-    loads['r'] = r
-    loads['chord'] = chord
-    loads['theta'] = np.radians(theta)
-    loads['rho'] = rho
-    loads['mu'] = mu
-    loads['tilt'] = np.radians(tilt)
-    loads['precone'] = np.radians(precone)
-    loads['yaw'] = np.radians(yaw)
-    loads['shearExp'] = shearExp
-    loads['hubHt'] = hubHt
-    loads['Uinf'] = Uinf
-    loads['Omega'] = Omega
-    loads['pitch'] = np.radians(pitch)
-    loads['azimuth'] = np.radians(azimuth)
-    loads['airfoil_parameterization'] = CST
-    loads['bemoptions'] = bemoptions
-    loads['airfoil_analysis_options'] = airfoil_analysis_options
-
-    loads.run()
-
-    print 'Np', loads['Np']
-    print 'Tp', loads['Tp']
-    print 'Omega', loads['Omega']
-
-    ##### Test CCBlade
-    # Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
-    # tsr = 7.55
-    # pitch = np.array([0.0, 0.0])
-    # Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
-    # n2 = len(Uinf)
+    # loads = Problem(impl=impl)
+    # root = loads.root = Loads(n)
     #
-    # ccblade = Problem(impl=impl)
-    # ccblade.root = CCBlade(nSector, n, n2)
+    # loads.driver = pyOptSparseDriver()
+    # loads.driver.options['optimizer'] = 'SNOPT'
+    # loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # # loads.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
+    # loads.driver.add_objective('obj')
     #
-    # ### SETUP OPTIMIZATION
-    # # ccblade.driver = pyOptSparseDriver()
-    # # ccblade.driver.options['optimizer'] = 'SNOPT'
-    # # ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
-    # # # ccblade.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
-    # # ccblade.driver.add_objective('obj')
+    # recorder = DumpRecorder('optimization2.log')
+    # # adding specific includes works, but leaving it out results in a crash
+    # # recorder.options['includes'] = ['x']
+    # loads.driver.add_recorder(recorder)
+    #
     # # recorder = SqliteRecorder('recorder')
     # # recorder.options['record_params'] = True
     # # recorder.options['record_metadata'] = True
     # # ccblade.driver.add_recorder(recorder)
     #
-    # ccblade.setup(check=False)
     #
-    # ccblade['Rhub'] = Rhub
-    # ccblade['Rtip'] = Rtip
-    # ccblade['r'] = r
-    # ccblade['chord'] = chord
-    # ccblade['theta'] = np.radians(theta)
-    # ccblade['B'] = B
-    # ccblade['rho'] = rho
-    # ccblade['mu'] = mu
-    # ccblade['tilt'] = np.radians(tilt)
-    # ccblade['precone'] = np.radians(precone)
-    # ccblade['yaw'] = np.radians(yaw)
-    # ccblade['shearExp'] = shearExp
-    # ccblade['hubHt'] = hubHt
-    # ccblade['nSector'] = nSector
-    # ccblade['Uinf'] = Uinf
-    # ccblade['Omega'] = Omega
-    # ccblade['pitch'] = np.radians(pitch)
-    # ccblade['airfoil_parameterization'] = CST
-    # ccblade['bemoptions'] = bemoptions
-    # ccblade['airfoil_analysis_options'] = airfoil_analysis_options
+    # loads.setup(check=False)
     #
-    # # import time
-    # # t0 = time.time()
-    # ccblade.run()
-    # # t = time.time()
-    # # print t - t0
+    # loads['Rhub'] = Rhub
+    # loads['Rtip'] = Rtip
+    # loads['r'] = r
+    # loads['chord'] = chord
+    # loads['theta'] = np.radians(theta)
+    # loads['rho'] = rho
+    # loads['mu'] = mu
+    # loads['tilt'] = np.radians(tilt)
+    # loads['precone'] = np.radians(precone)
+    # loads['yaw'] = np.radians(yaw)
+    # loads['shearExp'] = shearExp
+    # loads['hubHt'] = hubHt
+    # loads['Uinf'] = Uinf
+    # loads['Omega'] = Omega
+    # loads['pitch'] = np.radians(pitch)
+    # loads['azimuth'] = np.radians(azimuth)
+    # loads['airfoil_parameterization'] = CST
+    # loads['bemoptions'] = bemoptions
+    # loads['airfoil_analysis_options'] = airfoil_analysis_options
     #
-    # print 'CP', ccblade['CP']
-    # print 'CT', ccblade['CT']
-    # print 'CQ', ccblade['CQ']
+    # loads.run()
+    #
+    # print 'Np', loads['Np']
+    # print 'Tp', loads['Tp']
+    # print 'Omega', loads['Omega']
+
+    ##### Test CCBlade
+    Uinf = np.array([10.0])  # Needs to be an array for CCBlade group
+    tsr = 7.55
+    pitch = np.array([0.0])
+    Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
+    n2 = len(Uinf)
+
+    ccblade = Problem(impl=impl)
+    ccblade.root = CCBlade(nSector, n, n2)
+
+    ### SETUP OPTIMIZATION
+    ccblade.driver = pyOptSparseDriver()
+    ccblade.driver.options['optimizer'] = 'SNOPT'
+    ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # ccblade.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
+    ccblade.driver.add_objective('obj')
+    # recorder = SqliteRecorder('recorder')
+    recorder = DumpRecorder('optimization_cp.log')
+    recorder.options['record_params'] = True
+    recorder.options['record_metadata'] = True
+    ccblade.driver.add_recorder(recorder)
+
+    ccblade.setup(check=False)
+
+    ccblade['Rhub'] = Rhub
+    ccblade['Rtip'] = Rtip
+    ccblade['r'] = r
+    ccblade['chord'] = chord
+    ccblade['theta'] = np.radians(theta)
+    ccblade['B'] = B
+    ccblade['rho'] = rho
+    ccblade['mu'] = mu
+    ccblade['tilt'] = np.radians(tilt)
+    ccblade['precone'] = np.radians(precone)
+    ccblade['yaw'] = np.radians(yaw)
+    ccblade['shearExp'] = shearExp
+    ccblade['hubHt'] = hubHt
+    ccblade['nSector'] = nSector
+    ccblade['Uinf'] = Uinf
+    ccblade['Omega'] = Omega
+    ccblade['pitch'] = np.radians(pitch)
+    ccblade['airfoil_parameterization'] = CST
+    ccblade['bemoptions'] = bemoptions
+    ccblade['airfoil_analysis_options'] = airfoil_analysis_options
+
+    # import time
+    # t0 = time.time()
+    ccblade.run()
+    # t = time.time()
+    # print t - t0
+
+    print 'CP', ccblade['CP']
+    print 'CT', ccblade['CT']
+    print 'CQ', ccblade['CQ']

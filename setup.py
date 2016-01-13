@@ -13,13 +13,19 @@ setup(
     author='S. Andrew Ning',
     author_email='andrew.ning@nrel.gov',
     package_dir={'': 'src'},
+    # package_data = {
+    #     # If any package contains *.txt or *.rst files, include them:
+    #     '': ['*.so']
+    # },
     # package_data = {'src': ['pyxlight.so', 'pyxlight_cs.so']},
-    packages=['5MW_AFFiles','CoordinatesFiles', 'SU2_EDU'],
-    py_modules=['ccblade2'],
+    packages=['', '5MW_AFFiles','CoordinatesFiles', 'SU2_EDU'],
+    py_modules=['ccblade2', 'pyXLIGHT', 'airfoilprep_free', 'naca_generator'],
+    package_data={'': ['*.so', '*.cfg', '*.su2'], 'CoordinatesFiles': ['*.cfg', '*.su2', '*.dat']},
     install_requires=['airfoilprep.py>=0.1'],  # , 'zope.interface'],
     # test_suite='test.test_ccblade.py',
     license='Apache License, Version 2.0',
     ext_modules=[Extension('_bem', ['src/bem.f90'], extra_compile_args=['-O2'])],
     dependency_links=['https://github.com/WISDEM/AirfoilPreppy/tarball/master#egg=airfoilprep.py-0.1'],
+    # data_files=[('CoordinatesFiles', ['pyxlight.so', 'pyxlight_cs.so'])],
     zip_safe=False
 )
