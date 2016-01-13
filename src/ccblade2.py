@@ -1454,8 +1454,8 @@ if __name__ == "__main__":
 
     loads.driver = pyOptSparseDriver()
     loads.driver.options['optimizer'] = 'SNOPT'
-    loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
-    # ccblade.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
+    # loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    loads.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
     loads.driver.add_objective('obj')
 
     recorder = DumpRecorder('optimization.log')

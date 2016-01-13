@@ -1189,7 +1189,6 @@ class Airfoil(object):
         # read in coordinate file
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
         airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates.dat'
-        # TODO: Check to make sure the right file is being read
         # with suppress_stdout_stderr():
         airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
         airfoil.re = Re
@@ -1227,12 +1226,12 @@ class Airfoil(object):
             dcd_dalpha = (cd_alpha - cd) / fd_step
 
             airfoil.re = Re[0][0] + fd_step
-            cl_Re, cd_Re, cm, lexitflag = airfoil.solveAlphaComplex(alpha)
+            cl_Re, cd_Re, cm, lexitflag = airfoil.solveAlpha(alpha)
             if lexitflag:
                 cl_Re = -10.0
                 cd_Re = 0.0
-            dcl_dRe = (cl_alpha - cl) / fd_step
-            dcd_dRe = (cl_alpha - cl) / fd_step
+            dcl_dRe = (cl_Re - cl) / fd_step
+            dcd_dRe = (cd_Re - cl) / fd_step
 
         return dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
@@ -1393,7 +1392,6 @@ class Airfoil(object):
             if lexitflag:
                 cl = -10.0
                 cd = 0.0
-                print "XFOIL FAILURE"
             return cl, cd
 
 
@@ -1424,27 +1422,41 @@ class Airfoil(object):
         self.N = N
         self.dz = dz
 
-        step_size = 1e-20
-        cs_step = complex(0, step_size)
+
         dcl_dcst, dcd_dcst = np.zeros(8), np.zeros(8)
         cl, cd = cstReal(alpha, Re, np.real(wl), np.real(wu), N, dz, Uinf=10.0)
 
-        for i in range(len(wl)):
-            wl_complex = wl.copy()
-            wl_complex[i] += cs_step
-            cl_complex, cd_complex = cstComplex(alpha, Re, wl_complex, wu, N, dz, Uinf=10.0)
-            dcl_dcst[i] = np.imag(cl_complex)/np.imag(cs_step)
-            dcd_dcst[i] = np.imag(cd_complex)/np.imag(cs_step)
-            wu_complex = wu.copy()
-            wu_complex[i] += cs_step
-            cl_complex, cd_complex = cstComplex(alpha, Re, wl, wu_complex, N, dz, Uinf=10.0)
-            dcl_dcst[i+4] = np.imag(cl_complex)/np.imag(cs_step)
-            dcd_dcst[i+4] = np.imag(cd_complex)/np.imag(cs_step)
+        if FDorCS == 'CS':
+            step_size = 1e-20
+            cs_step = complex(0, step_size)
+            for i in range(len(wl)):
+
+                wl_complex = deepcopy(wl)
+                wl_complex[i] += cs_step
+                cl_complex, cd_complex = cstComplex(alpha, Re, wl_complex, wu, N, dz, Uinf=10.0)
+                dcl_dcst[i] = np.imag(cl_complex)/np.imag(cs_step)
+                dcd_dcst[i] = np.imag(cd_complex)/np.imag(cs_step)
+                wu_complex = deepcopy(wu)
+                wu_complex[i] += cs_step
+                cl_complex, cd_complex = cstComplex(alpha, Re, wl, wu_complex, N, dz, Uinf=10.0)
+                dcl_dcst[i+4] = np.imag(cl_complex)/np.imag(cs_step)
+                dcd_dcst[i+4] = np.imag(cd_complex)/np.imag(cs_step)
+        else:
+            step_size = 1e-6
+            fd_step = step_size
+            for i in range(len(wl)):
+                wl_fd = np.real(deepcopy(wl))
+                wl_fd[i] += fd_step
+                cl_fd, cd_fd = cstReal(alpha, Re, wl_fd, wu, N, dz, Uinf=10.0)
+                dcl_dcst[i] = (cl - cl_fd)/np.imag(fd_step)
+                dcd_dcst[i] = (cd - cl_fd)/np.imag(fd_step)
+                wu_fd = np.real(deepcopy(wu))
+                wu_fd[i] += fd_step
+                cl_fd, cd_fd = cstReal(alpha, Re, wl, wu_fd, N, dz, Uinf=10.0)
+                dcl_dcst[i+4] = (cl - cl_fd)/np.imag(fd_step)
+                dcd_dcst[i+4] = (cd - cl_fd)/np.imag(fd_step)
 
         return cl, cd, dcl_dcst, dcd_dcst
-
-
-
 
     @classmethod
     def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS, Uinf):
@@ -1542,52 +1554,11 @@ class Airfoil(object):
         config.AoA = np.degrees(alpha)
         Ma = Uinf / 340.29  # Speed of sound at sea level
         config.MACH_NUMBER = Ma
-        #TODO : ADD REYNOLDS NUMBER
+        config.REYNOLDS_NUMBER= Re
 
         cd = SU2.eval.func('DRAG', config, state)
         cl = SU2.eval.func('LIFT', config, state)
         cm = SU2.eval.func('MOMENT_Z', config, state)
-
-        # konfig = copy.deepcopy(config)
-        # ztate  = copy.deepcopy(state)
-
-        # konfig.AoA = np.degrees(alpha)
-        # Ma = Uinf / 340.29  # Speed of sound at sea level
-        # konfig.MACH_NUMBER = Ma
-        # #TODO : ADD REYNOLDS NUMBER
-        #
-        # cd = SU2.eval.func('DRAG', konfig, ztate)
-        # cl = SU2.eval.func('LIFT', konfig, ztate)
-        # cm = SU2.eval.func('MOMENT_Z', konfig, ztate)
-
-        # # check for existing files
-        # if not compute:
-        #     config.RESTART_SOL = 'YES'
-        #     state.find_files(config)
-        # else:
-        #     state.FILES.MESH = config.MESH_FILENAME
-        #
-        # # Direct Solution
-        # if compute:
-        #     info = SU2.run.direct(config)
-        #     state.update(info)
-        #     SU2.io.restart2solution(config,state)
-        #
-        # # Adjoint Solution
-        # if compute:
-        #     info = SU2.run.adjoint(config)
-        #     state.update(info)
-        #     #SU2.io.restart2solution(config,state)
-        #
-        # # Gradient Projection
-        # info = SU2.run.projection(config,step)
-        # state.update(info)
-        #
-        # get_gradients = info.get('GRADIENTS')
-        # adjoint_gradient_cd = get_gradients.get('DRAG')
-        # adjoint_gradient_cl = get_gradients.get('LIFT')
-
-        # Adjoint Solution
 
         # RUN FOR DRAG GRADIENTS
         info = SU2.run.adjoint(config)
@@ -1623,7 +1594,7 @@ class Airfoil(object):
         wu_original = [0.5, 0.5, 0.5, 0.5]
         dz = 0.0
         N = 200
-        coord_old = cst_to_coordinates(wl_original, wu_original, N, dz)
+        coord_old = cst_to_coordinates_from_kulfan(wl_original, wu_original, N, dz)
 
         design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
 
@@ -1637,7 +1608,7 @@ class Airfoil(object):
                     wl_new[i] += fd_step
                 else:
                     wu_new[i-4] += fd_step
-                coor_new = cst_to_coordinates(wl_new, wu_new, N, dz)
+                coor_new = cst_to_coordinates_from_kulfan(wl_new, wu_new, N, dz)
                 j = 0
                 for coor_d in design:
                     if (coor_new[1][coor_d] - coord_old[1][coor_d]).real == 0:
@@ -1657,7 +1628,7 @@ class Airfoil(object):
                     wl_new[i] += cs_step
                 else:
                     wu_new[i+4] += fd_step
-                coor_new = cst_to_coordinates(wl_new, wu_new, N, dz)
+                coor_new = cst_to_coordinates_complex(wl_new, wu_new, N, dz)
                 j = 0
                 for coor_d in design:
                     if coor_new[1][coor_d].imag == 0:
@@ -1665,8 +1636,6 @@ class Airfoil(object):
                     else:
                         dcst_dx[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
                     j += 1
-        # dcl_dx = np.zeros((38)) #,1))
-
         dcst_dx = np.matrix(dcst_dx)
         dcl_dx = np.matrix(dcl_dx)
         dcd_dx = np.matrix(dcd_dx)
@@ -1838,6 +1807,47 @@ def ClassShapeComplex(w, x, N1, N2, dz):
 
 def cst_to_coordinates(CST):
     wl, wu, N, dz = CST_to_kulfan(CST)
+    x = np.ones((N, 1))
+    zeta = np.zeros((N, 1))
+    for z in range(0, N):
+        zeta[z] = 2 * pi / N * z
+        if z == N - 1:
+            zeta[z] = 2.0 * pi
+        x[z] = 0.5*(cos(zeta[z])+1.0)
+
+    # N1 and N2 parameters (N1 = 0.5 and N2 = 1 for airfoil shape)
+    N1 = 0.5
+    N2 = 1
+
+    try:
+        zerind = np.where(x == 0)  # Used to separate upper and lower surfaces
+        zerind = zerind[0][0]
+    except:
+        zerind = N/2
+
+    xl = np.zeros(zerind)
+    xu = np.zeros(N-zerind)
+
+    for z in range(len(xl)):
+        xl[z] = x[z]        # Lower surface x-coordinates
+    for z in range(len(xu)):
+        xu[z] = x[z + zerind]   # Upper surface x-coordinates
+
+    yl = ClassShape(wl, xl, N1, N2, -dz) # Call ClassShape function to determine lower surface y-coordinates
+    yu = ClassShape(wu, xu, N1, N2, dz)  # Call ClassShape function to determine upper surface y-coordinates
+
+    y = np.concatenate([yl, yu])  # Combine upper and lower y coordinates
+    y = y[::-1]
+    # coord_split = [xl, yl, xu, yu]  # Combine x and y into single output
+    # coord = [x, y]
+    x1 = np.zeros(len(x))
+    for k in range(len(x)):
+        x1[k] = x[k][0]
+    x = x1
+    return [x, y]
+
+def cst_to_coordinates_from_kulfan(wl, wu, N, dz):
+
     x = np.ones((N, 1))
     zeta = np.zeros((N, 1))
     for z in range(0, N):
