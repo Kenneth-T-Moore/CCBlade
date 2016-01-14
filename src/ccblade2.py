@@ -21,11 +21,11 @@ class CCInit(Component):
     """
     def __init__(self):
         super(CCInit, self).__init__()
-        self.add_param('Rtip', val=0.0)
-        self.add_param('precone', val=0.0)
-        self.add_param('precurveTip', val=0.0)
+        self.add_param('Rtip', val=0.0, units='m')
+        self.add_param('precone', val=0.0, units='rad')
+        self.add_param('precurveTip', val=0.0, units='m')
 
-        self.add_output('rotorR', shape=1)
+        self.add_output('rotorR', shape=1, units='m')
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
@@ -52,25 +52,25 @@ class WindComponents(Component):
     """
     def __init__(self, n):
         super(WindComponents, self).__init__()
-        self.add_param('r', val=np.zeros(n))
-        self.add_param('precurve', val=np.zeros(n))
-        self.add_param('presweep', shape=n)
-        self.add_param('Uinf', shape=1)
-        self.add_param('precone', shape=1)
-        self.add_param('azimuth', val=0.0)
-        self.add_param('tilt', shape=1)
-        self.add_param('yaw', shape=1)
-        self.add_param('Omega', shape=1)
+        self.add_param('r', val=np.zeros(n), units='m')
+        self.add_param('precurve', val=np.zeros(n), units='m')
+        self.add_param('presweep', shape=n, units='m')
+        self.add_param('Uinf', shape=1, units='m/s')
+        self.add_param('precone', shape=1, units='deg')
+        self.add_param('azimuth', val=0.0, units='deg')
+        self.add_param('tilt', shape=1, units='deg')
+        self.add_param('yaw', shape=1, units='deg')
+        self.add_param('Omega', shape=1, units='rpm')
         self.add_param('shearExp', shape=1) #, pass_by_obj=True)
-        self.add_param('hubHt', shape=1)
+        self.add_param('hubHt', shape=1, units='m')
 
-        self.add_output('Vx', shape=n)
-        self.add_output('Vy', shape=n)
+        self.add_output('Vx', shape=n, units='m/s')
+        self.add_output('Vy', shape=n, units='m/s')
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
         # self.fd_options['force_fd'] = True
-        self.add_param('theta', val=np.zeros(n))
+        self.add_param('theta', val=np.zeros(n), units='deg')
 
     def solve_nonlinear(self, params, unknowns, resids):
         unknowns['Vx'], unknowns['Vy'] = _bem.windcomponents(params['r'], params['precurve'], params['presweep'], params['precone'], params['yaw'], params['tilt'], params['azimuth'], params['Uinf'], params['Omega'], params['hubHt'], params['shearExp'])
@@ -150,22 +150,22 @@ class FlowCondition(Component):
     """
     def __init__(self):
         super(FlowCondition, self).__init__()
-        self.add_param('pitch', shape=1)
-        self.add_param('Vx', shape=1)
-        self.add_param('Vy', shape=1)
-        self.add_param('chord', shape=1)
-        self.add_param('theta', shape=1)
-        self.add_param('rho', shape=1)
-        self.add_param('mu', shape=1)
-        self.add_param('a_sub', shape=1)
-        self.add_param('phi_sub', shape=1)
-        self.add_param('ap_sub', shape=1)
+        self.add_param('pitch', shape=1, units='deg')
+        self.add_param('Vx', shape=1, units='m/s')
+        self.add_param('Vy', shape=1, units='m/s')
+        self.add_param('chord', shape=1, units='m')
+        self.add_param('theta', shape=1, units='deg')
+        self.add_param('rho', shape=1, units='kg/m**3')
+        self.add_param('mu', shape=1, units='kg/(m*s)')
+        self.add_param('a_sub', val=0.0841641)
+        self.add_param('ap_sub', val=-0.0841641)
+        self.add_param('phi_sub', shape=1, units='deg')
         self.add_param('da_dx', val=np.zeros(9))
         self.add_param('dap_dx', val=np.zeros(9))
 
-        self.add_output('alpha_sub', shape=1)
+        self.add_output('alpha_sub', shape=1, units='deg')
         self.add_output('Re_sub', shape=1)
-        self.add_output('W_sub', shape=1)
+        self.add_output('W_sub', shape=1, units='m/s')
         self.add_output('dalpha_dx', shape=9)
         self.add_output('dRe_dx', shape=9)
 
@@ -279,7 +279,7 @@ class AirfoilComp(Component):
     """
     def __init__(self, n, i):
         super(AirfoilComp, self).__init__()
-        self.add_param('alpha_sub', shape=1)
+        self.add_param('alpha_sub', shape=1, units='deg')
         self.add_param('Re_sub', shape=1)
         self.add_param('airfoil_parameterization', val=np.zeros((17, 8))) #, pass_by_obj=True)
         self.add_param('airfoil_analysis_options', val={}, pass_by_obj=True)
@@ -300,8 +300,6 @@ class AirfoilComp(Component):
     def airfoil_parameterization_methodology(self, CST, alpha, Re, FDorCS):
         self.af = Airfoil.initFromCST(CST, [alpha], [Re])
         alpha, Re, cl, cd, cm = self.af.createDataGrid()
-        global function_calls_XFOIL
-        function_calls_XFOIL += 1
         dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.xfoilFlowGradients(CST, alpha, Re, FDorCS)
         return cl, cd, dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
@@ -362,19 +360,19 @@ class BEM(Component):
     def __init__(self, n, i):
         super(BEM, self).__init__()
 
-        self.add_param('pitch', shape=1)
-        self.add_param('Rtip', shape=1)
-        self.add_param('Vx', shape=1)
-        self.add_param('Vy', shape=1)
-        self.add_param('Omega', shape=1)
-        self.add_param('r', shape=1)
-        self.add_param('chord', shape=1)
-        self.add_param('theta', shape=1)
-        self.add_param('rho', shape=1)
-        self.add_param('mu', shape=1)
-        self.add_param('Rhub', shape=1)
-        self.add_param('alpha_sub', shape=1)
-        self.add_param('cl_sub', val=1.0)
+        self.add_param('pitch', shape=1, units='deg')
+        self.add_param('Rtip', shape=1, units='m')
+        self.add_param('Vx', shape=1, units='m/s')
+        self.add_param('Vy', shape=1, units='m/s')
+        self.add_param('Omega', shape=1, units='rpm')
+        self.add_param('r', shape=1, units='m')
+        self.add_param('chord', shape=1, units='m')
+        self.add_param('theta', shape=1, units='deg')
+        self.add_param('rho', shape=1, units='kg/m**3')
+        self.add_param('mu', shape=1, units='kg/(m*s)')
+        self.add_param('Rhub', shape=1, units='m')
+        self.add_param('alpha_sub', shape=1, units='deg')
+        self.add_param('cl_sub', shape=1)
         self.add_param('cd_sub', shape=1)
         self.add_param('B', val=3, pass_by_obj=True)
         self.add_param('bemoptions', val={}, pass_by_obj=True)
@@ -389,7 +387,7 @@ class BEM(Component):
         self.add_output('ap_sub', shape=1)
         self.add_output('da_dx', val=np.zeros(9))
         self.add_output('dap_dx', val=np.zeros(9))
-        self.add_state('phi_sub', shape=1)
+        self.add_state('phi_sub', shape=1, units='deg')
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
@@ -551,15 +549,15 @@ class MUX(Component):
     def __init__(self, n):
         super(MUX, self).__init__()
         for i in range(n):
-            self.add_param('phi'+str(i+1), val=0.0)
+            self.add_param('phi'+str(i+1), val=0.0, units='deg')
             self.add_param('cl'+str(i+1), val=0.0)
             self.add_param('cd'+str(i+1), val=0.0)
-            self.add_param('W'+str(i+1), val=0.0)
+            self.add_param('W'+str(i+1), val=0.0, units='m/s')
 
-        self.add_output('phi', val=np.zeros(n))
+        self.add_output('phi', val=np.zeros(n), units='deg')
         self.add_output('cl', val=np.zeros(n))
         self.add_output('cd', val=np.zeros(n))
-        self.add_output('W', val=np.zeros(n))
+        self.add_output('W', val=np.zeros(n), units='m/s')
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
@@ -607,17 +605,18 @@ class MUX_POWER(Component):
         self.add_output('CT', val=np.zeros(n2))
         self.add_output('CQ', val=np.zeros(n2))
         self.add_output('CP', val=np.zeros(n2))
-        self.add_output('T', val=np.zeros(n2))
-        self.add_output('Q', val=np.zeros(n2))
-        self.add_output('P', val=np.zeros(n2))
+        self.add_output('T', val=np.zeros(n2), units='N')
+        self.add_output('Q', val=np.zeros(n2), units='N*m')
+        self.add_output('P', val=np.zeros(n2), units='W')
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
         self.n2 = n2
-        self.add_param('theta', val=np.zeros(17))
-        self.add_param('Uinf', val=np.zeros(n2))
-        self.add_param('pitch', val=np.zeros(n2))
-        self.add_param('Omega', val=np.zeros(n2))
+
+        self.add_param('theta', val=np.zeros(17), units='deg')
+        self.add_param('Uinf', val=np.zeros(n2), units='m/s')
+        self.add_param('pitch', val=np.zeros(n2), units='deg')
+        self.add_param('Omega', val=np.zeros(n2), units='rpm')
 
     def solve_nonlinear(self, params, unknowns, resids):
         for i in range(self.n2):
@@ -653,15 +652,15 @@ class DistributedAeroLoads(Component):
     """
     def __init__(self, n):
         super(DistributedAeroLoads, self).__init__()
-        self.add_param('chord', shape=n)
-        self.add_param('rho', shape=1)
-        self.add_param('phi', val=np.zeros(n))
+        self.add_param('chord', shape=n, units='m')
+        self.add_param('rho', shape=1, units='kg/m**3')
+        self.add_param('phi', val=np.zeros(n), units='deg')
         self.add_param('cl', val=np.zeros(n))
         self.add_param('cd', val=np.zeros(n))
-        self.add_param('W', val=np.zeros(n))
+        self.add_param('W', val=np.zeros(n), units='m/s')
 
-        self.add_output('Np', shape=n)
-        self.add_output('Tp', shape=n)
+        self.add_output('Np', shape=n, units='N/m')
+        self.add_output('Tp', shape=n, units='N/m')
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
@@ -744,27 +743,27 @@ class CCEvaluate(Component):
     def __init__(self, n, nSector):
         super(CCEvaluate, self).__init__()
 
-        self.add_param('Uinf', val=10.0)
-        self.add_param('Rtip', val=63.)
-        self.add_param('Omega', shape=1)
-        self.add_param('r', shape=n)
+        self.add_param('Uinf', val=10.0, units='m/s')
+        self.add_param('Rtip', val=63., units='m')
+        self.add_param('Omega', shape=1, units='rpm')
+        self.add_param('r', shape=n, units='m')
         self.add_param('B', val=3, pass_by_obj=True)
-        self.add_param('precurve', shape=n)
-        self.add_param('presweep', shape=n)
-        self.add_param('presweepTip', shape=1)
-        self.add_param('precurveTip', shape=1)
-        self.add_param('rho', shape=1)
-        self.add_param('precone', shape=1)
-        self.add_param('Rhub', shape=1)
-        self.add_param('nSector', val=4)
-        self.add_param('rotorR', shape=1)
+        self.add_param('precurve', shape=n, units='m')
+        self.add_param('presweep', shape=n, units='m')
+        self.add_param('presweepTip', shape=1, units='m')
+        self.add_param('precurveTip', shape=1, units='m')
+        self.add_param('rho', shape=1, units='kg/m**3')
+        self.add_param('precone', shape=1, units='deg')
+        self.add_param('Rhub', shape=1, units='m')
+        self.add_param('nSector', val=4, pass_by_obj=True)
+        self.add_param('rotorR', shape=1, units='m')
         for i in range(nSector):
-            self.add_param('Np'+str(i+1), val=np.zeros(n))
-            self.add_param('Tp'+str(i+1), val=np.zeros(n))
+            self.add_param('Np'+str(i+1), val=np.zeros(n), units='N/m')
+            self.add_param('Tp'+str(i+1), val=np.zeros(n), units='N/m')
 
-        self.add_output('P', val=0.5)
-        self.add_output('T', val=0.5)
-        self.add_output('Q', val=0.5)
+        self.add_output('P', val=0.5, units='W')
+        self.add_output('T', val=0.5, units='N')
+        self.add_output('Q', val=0.5, units='N*m')
         self.add_output('CP', val=0.5)
         self.add_output('CT', val=0.5)
         self.add_output('CQ', val=0.5)
@@ -1033,11 +1032,15 @@ class CCEvaluate(Component):
 class Loads_for_RotorSE(Component):
     def __init__(self, n):
         super(Loads_for_RotorSE, self).__init__()
-        self.add_param('Rhub', shape=1)
-        self.add_param('r', val=np.zeros(n))
-        self.add_param('Rtip', shape=1)
-        self.add_param('Np', shape=n)
-        self.add_param('Tp', shape=n)
+        self.add_param('Rhub', shape=1, units='m')
+        self.add_param('r', val=np.zeros(n), units='m')
+        self.add_param('Rtip', shape=1, units='m')
+        self.add_param('Np', shape=n, units='N/m')
+        self.add_param('Tp', shape=n, units='N/m')
+        self.add_param('Uinf', shape=1, units='m/s')
+        self.add_param('Omega', shape=1, units='rpm')
+        self.add_param('pitch', shape=1, units='deg')
+        self.add_param('azimuth', shape=1, units='deg')
 
         self.add_output('loads:r', shape=n+2, units='m', desc='radial positions along blade going toward tip')
         self.add_output('loads:Px', shape=n+2, units='N/m', desc='distributed loads in blade-aligned x-direction')
@@ -1121,6 +1124,7 @@ class BrentGroup(Group):
         # set standard limits
         epsilon = 1e-6
         phi_lower = epsilon
+        # phi_upper = pi/2
         phi_upper = pi/2
         # if errf(phi_lower, *args)*errf(phi_upper, *args) > 0:  # an uncommon but possible case
         #
@@ -1145,23 +1149,23 @@ class BrentGroup(Group):
 class Loads(Group):
     def __init__(self, n):
         super(Loads, self).__init__()
-        self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
-        self.add('Rtip', IndepVarComp('Rtip', 0.0), promotes=['*'])
-        self.add('precone', IndepVarComp('precone', 0.0), promotes=['*'])
-        self.add('tilt', IndepVarComp('tilt', 0.0), promotes=['*'])
-        self.add('hubHt', IndepVarComp('hubHt', 0.0), promotes=['*'])
-        self.add('Uinf', IndepVarComp('Uinf', 0.0), promotes=['*'])
-        self.add('pitch', IndepVarComp('pitch', 0.0), promotes=['*'])
-        self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
-        self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
-        self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
-        self.add('azimuth', IndepVarComp('azimuth', 0.0), promotes=['*'])
-        self.add('Omega', IndepVarComp('Omega', 0.0), promotes=['*'])
-        self.add('r', IndepVarComp('r', val=np.zeros(n)), promotes=['*'])
-        self.add('chord', IndepVarComp('chord', val=np.zeros(n)), promotes=['*'])
-        self.add('theta', IndepVarComp('theta', val=np.zeros(n)), promotes=['*'])
-        self.add('precurve', IndepVarComp('precurve', val=np.zeros(n)), promotes=['*'])
-        self.add('presweep', IndepVarComp('presweep', val=np.zeros(n)), promotes=['*'])
+        self.add('Rhub', IndepVarComp('Rhub', 0.0, units='m'), promotes=['*'])
+        self.add('Rtip', IndepVarComp('Rtip', 0.0, units='m'), promotes=['*'])
+        self.add('precone', IndepVarComp('precone', 0.0, units='deg'), promotes=['*'])
+        self.add('tilt', IndepVarComp('tilt', 0.0, units='deg'), promotes=['*'])
+        self.add('hubHt', IndepVarComp('hubHt', 0.0, units='m'), promotes=['*'])
+        self.add('Uinf', IndepVarComp('Uinf', 0.0, units='m/s'), promotes=['*'])
+        self.add('pitch', IndepVarComp('pitch', 0.0, units='deg'), promotes=['*'])
+        self.add('yaw', IndepVarComp('yaw', 0.0, units='deg'), promotes=['*'])
+        self.add('precurveTip', IndepVarComp('precurveTip', 0.0, units='m'), promotes=['*'])
+        self.add('presweepTip', IndepVarComp('presweepTip', 0.0, units='m'), promotes=['*'])
+        self.add('azimuth', IndepVarComp('azimuth', 0.0, units='deg'), promotes=['*'])
+        self.add('Omega', IndepVarComp('Omega', 0.0, units='rpm'), promotes=['*'])
+        self.add('r', IndepVarComp('r', val=np.zeros(n), units='m'), promotes=['*'])
+        self.add('chord', IndepVarComp('chord', val=np.zeros(n), units='m'), promotes=['*'])
+        self.add('theta', IndepVarComp('theta', val=np.zeros(n), units='deg'), promotes=['*'])
+        self.add('precurve', IndepVarComp('precurve', val=np.zeros(n), units='m'), promotes=['*'])
+        self.add('presweep', IndepVarComp('presweep', val=np.zeros(n), units='m'), promotes=['*'])
         # self.add('af', IndepVarComp('af', val=np.zeros(n)), promotes=['*'])
         self.add('airfoil_parameterization', IndepVarComp('airfoil_parameterization', val=np.zeros((n, 8))), promotes=['*'])
         self.add('airfoil_analysis_options', IndepVarComp('airfoil_analysis_options', {}, pass_by_obj=True), promotes=['*'])
@@ -1170,8 +1174,9 @@ class Loads(Group):
         self.add('init', CCInit(), promotes=['*'])
         self.add('wind', WindComponents(n), promotes=['*'])
         self.add('mux', MUX(n), promotes=['*'])
+        pg = self.add('parallel', ParallelGroup(), promotes=['*'])
         for i in range(n):
-            self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options'])
+            pg.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options'])
             self.connect('r', 'brent'+str(i+1)+'.r', src_indices=[i])
             self.connect('chord', 'brent'+str(i+1)+'.chord', src_indices=[i])
             self.connect('theta', 'brent'+str(i+1)+'.theta', src_indices=[i])
@@ -1206,7 +1211,7 @@ class LoadsGroup_to_RotorSE(Group):
 class Sweep(Group):
     def __init__(self, azimuth, n):
         super(Sweep, self).__init__()
-        self.add('azimuth', IndepVarComp('azimuth', azimuth), promotes=['*'])
+        self.add('azimuth', IndepVarComp('azimuth', azimuth, units='deg'), promotes=['*'])
         self.add('wind', WindComponents(n), promotes=['*'])
         self.add('mux', MUX(n), promotes=['*'])
         for i in range(n):
@@ -1239,24 +1244,24 @@ class FlowSweep(Group):
 class CCBlade(Group):
     def __init__(self, nSector, n, n2):
         super(CCBlade, self).__init__()
-        self.add('Uinf', IndepVarComp('Uinf', np.zeros(n2)), promotes=['*'])
-        self.add('pitch', IndepVarComp('pitch', np.zeros(n2)), promotes=['*'])
-        self.add('Omega', IndepVarComp('Omega', np.zeros(n2)), promotes=['*'])
-        self.add('r', IndepVarComp('r', np.zeros(n)), promotes=['*'])
-        self.add('chord', IndepVarComp('chord', np.zeros(n)), promotes=['*'])
-        self.add('Rhub', IndepVarComp('Rhub', 0.0), promotes=['*'])
-        self.add('Rtip', IndepVarComp('Rtip', 0.0), promotes=['*'])
-        self.add('precone', IndepVarComp('precone', 0.0), promotes=['*'])
-        self.add('tilt', IndepVarComp('tilt', 0.0), promotes=['*'])
-        self.add('theta', IndepVarComp('theta', np.zeros(n)), promotes=['*'])
-        self.add('hubHt', IndepVarComp('hubHt', 0.0), promotes=['*'])
-        self.add('precurve', IndepVarComp('precurve', np.zeros(n)), promotes=['*'])
-        self.add('presweep', IndepVarComp('presweep', np.zeros(n)), promotes=['*'])
-        self.add('yaw', IndepVarComp('yaw', 0.0), promotes=['*'])
-        self.add('precurveTip', IndepVarComp('precurveTip', 0.0), promotes=['*'])
-        self.add('presweepTip', IndepVarComp('presweepTip', 0.0), promotes=['*'])
-        self.add('mu', IndepVarComp('mu', 0.0), promotes=['*'])
-        self.add('rho', IndepVarComp('rho', 0.0), promotes=['*'])
+        self.add('Uinf', IndepVarComp('Uinf', np.zeros(n2), units='m/s'), promotes=['*'])
+        self.add('pitch', IndepVarComp('pitch', np.zeros(n2), units='deg'), promotes=['*'])
+        self.add('Omega', IndepVarComp('Omega', np.zeros(n2), units='rpm'), promotes=['*'])
+        self.add('r', IndepVarComp('r', np.zeros(n), units='m'), promotes=['*'])
+        self.add('chord', IndepVarComp('chord', np.zeros(n), units='m'), promotes=['*'])
+        self.add('Rhub', IndepVarComp('Rhub', 0.0, units='m'), promotes=['*'])
+        self.add('Rtip', IndepVarComp('Rtip', 0.0, units='m'), promotes=['*'])
+        self.add('precone', IndepVarComp('precone', 0.0, units='deg'), promotes=['*'])
+        self.add('tilt', IndepVarComp('tilt', 0.0, units='deg'), promotes=['*'])
+        self.add('theta', IndepVarComp('theta', np.zeros(n), units='deg'), promotes=['*'])
+        self.add('hubHt', IndepVarComp('hubHt', 0.0, units='m'), promotes=['*'])
+        self.add('precurve', IndepVarComp('precurve', np.zeros(n), units='m'), promotes=['*'])
+        self.add('presweep', IndepVarComp('presweep', np.zeros(n), units='m'), promotes=['*'])
+        self.add('yaw', IndepVarComp('yaw', 0.0, units='deg'), promotes=['*'])
+        self.add('precurveTip', IndepVarComp('precurveTip', 0.0, units='m'), promotes=['*'])
+        self.add('presweepTip', IndepVarComp('presweepTip', 0.0, units='m'), promotes=['*'])
+        self.add('mu', IndepVarComp('mu', 0.0, units='kg/(m*s)'), promotes=['*'])
+        self.add('rho', IndepVarComp('rho', 0.0, units='kg/m**3'), promotes=['*'])
         self.add('shearExp', IndepVarComp('shearExp', 0.0), promotes=['*'])
         # self.add('af', IndepVarComp('af', np.zeros(n), pass_by_obj=True), promotes=['*'])
         self.add('airfoil_parameterization', IndepVarComp('airfoil_parameterization', val=np.zeros((n, 8))), promotes=['*'])
@@ -1446,13 +1451,13 @@ if __name__ == "__main__":
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     azimuth = 90.
     n = len(r)
-    # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
-    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='CFD', FDorCS='FD', iterations=20, processors=0)
+    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
+    # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='CFD', FDorCS='FD', iterations=20, processors=0)
 
     #### Test LoadsGroup
     # loads = Problem(impl=impl)
     # root = loads.root = Loads(n)
-    #
+
     # loads.driver = pyOptSparseDriver()
     # loads.driver.options['optimizer'] = 'SNOPT'
     # loads.driver.add_desvar('Omega', lower=1.5, upper=25.0)
@@ -1464,12 +1469,12 @@ if __name__ == "__main__":
     # # recorder.options['includes'] = ['x']
     # loads.driver.add_recorder(recorder)
     #
-    # # recorder = SqliteRecorder('recorder')
-    # # recorder.options['record_params'] = True
-    # # recorder.options['record_metadata'] = True
-    # # ccblade.driver.add_recorder(recorder)
-    #
-    #
+    # recorder = SqliteRecorder('recorder')
+    # recorder.options['record_params'] = True
+    # recorder.options['record_metadata'] = True
+    # ccblade.driver.add_recorder(recorder)
+
+
     # loads.setup(check=False)
     #
     # loads['Rhub'] = Rhub
@@ -1509,16 +1514,16 @@ if __name__ == "__main__":
     ccblade.root = CCBlade(nSector, n, n2)
 
     ### SETUP OPTIMIZATION
-    ccblade.driver = pyOptSparseDriver()
-    ccblade.driver.options['optimizer'] = 'SNOPT'
-    ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # ccblade.driver = pyOptSparseDriver()
+    # ccblade.driver.options['optimizer'] = 'SNOPT'
+    # ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
     # ccblade.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
-    ccblade.driver.add_objective('obj')
+    # ccblade.driver.add_objective('obj')
     # recorder = SqliteRecorder('recorder')
-    recorder = DumpRecorder('optimization_cp.log')
-    recorder.options['record_params'] = True
-    recorder.options['record_metadata'] = True
-    ccblade.driver.add_recorder(recorder)
+    # recorder = DumpRecorder('optimization_cp.log')
+    # recorder.options['record_params'] = True
+    # recorder.options['record_metadata'] = True
+    # ccblade.driver.add_recorder(recorder)
 
     ccblade.setup(check=False)
 
@@ -1546,9 +1551,14 @@ if __name__ == "__main__":
     # import time
     # t0 = time.time()
     ccblade.run()
+    partial = open('partial.txt', 'w')
+    total = open('total.txt', 'w')
+    partial_dict = ccblade.check_partial_derivatives(out_stream=partial)
+    # ccblade.check_total_derivatives(out_stream=total)
     # t = time.time()
     # print t - t0
 
     print 'CP', ccblade['CP']
     print 'CT', ccblade['CT']
     print 'CQ', ccblade['CQ']
+    print ccblade['airfoil_parameterization']

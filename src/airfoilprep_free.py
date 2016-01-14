@@ -1527,7 +1527,6 @@ class Airfoil(object):
         subprocess.call([su2_file_execute])
         os.chdir(savedPath)
 
-        # filename = 'inv_NACA0012.cfg'
         partitions = processors
         compute = True
         step = 1e-4
@@ -1545,14 +1544,16 @@ class Airfoil(object):
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'SU2_EDU/bin')
         mesh_filename = basepath + os.path.sep + 'mesh_AIRFOIL.su2'
 
+        config.WRT_CSV_SOL = 'YES'
         config.MESH_FILENAME = mesh_filename
-        # find solution files if they exist
-        state.find_files(config)
-
         config.AoA = np.degrees(alpha)
         Ma = Uinf / 340.29  # Speed of sound at sea level
         config.MACH_NUMBER = Ma
         config.REYNOLDS_NUMBER = Re
+        # find solution files if they exist
+        # state.find_files(config)
+        state.FILES.MESH = config.MESH_FILENAME
+
 
         cd = SU2.eval.func('DRAG', config, state)
         cl = SU2.eval.func('LIFT', config, state)
@@ -1563,7 +1564,7 @@ class Airfoil(object):
         state.update(info)
         #SU2.io.restart2solution(config,state)
         # Gradient Projection
-        info = SU2.run.projection(config,step)
+        info = SU2.run.projection(config, step)
         state.update(info)
         get_gradients = info.get('GRADIENTS')
         dcd_dx = get_gradients.get('DRAG')
@@ -1574,7 +1575,7 @@ class Airfoil(object):
         state.update(info)
         #SU2.io.restart2solution(config,state)
         # Gradient Projection
-        info = SU2.run.projection(config,step)
+        info = SU2.run.projection(config, step)
         state.update(info)
         get_gradients = info.get('GRADIENTS')
         dcl_dx = get_gradients.get('LIFT')
