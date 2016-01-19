@@ -637,7 +637,6 @@ class Airfoil(object):
                 if lexitflag:
                     cl[j] = -10.0
                     cd[j] = 0.0
-                    print "XFOIL FAILURE"
             # error handling in case of XFOIL failure
             for k in range(len(cl)):
                 if cl[k] == -10.0:
@@ -724,7 +723,6 @@ class Airfoil(object):
                 if lexitflag:
                     cl[j] = -10.0
                     cd[j] = 0.0
-                    print "XFOIL FAILURE"
             # error handling in case of XFOIL failure
             for k in range(len(cl)):
                 if cl[k] == -10.0:
@@ -808,7 +806,6 @@ class Airfoil(object):
             cm = np.zeros(len(alphas))
             to_delete = np.zeros(0)
             for j in range(len(alphas)):
-                # print alphas[j]
                 cl[j], cd[j], cm[j], lexitflag = airfoil.solveAlpha(alphas[j])
                 if lexitflag:
                     cl[j] = -10.0
@@ -1426,7 +1423,7 @@ class Airfoil(object):
         return cl, cd, dcl_dcst, dcd_dcst
 
     @classmethod
-    def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS, Uinf):
+    def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS, Uinf, ComputeGradients):
 
         import os, sys, shutil, copy
         sys.path.append(os.environ['SU2_RUN'])
@@ -1525,89 +1522,90 @@ class Airfoil(object):
         cd = SU2.eval.func('DRAG', config, state)
         cl = SU2.eval.func('LIFT', config, state)
         cm = SU2.eval.func('MOMENT_Z', config, state)
+        if ComputeGradients:
+            # RUN FOR DRAG GRADIENTS
+            info = SU2.run.adjoint(config)
+            state.update(info)
+            #SU2.io.restart2solution(config,state)
+            # Gradient Projection
+            info = SU2.run.projection(config, step)
+            state.update(info)
+            get_gradients = info.get('GRADIENTS')
+            dcd_dx = get_gradients.get('DRAG')
 
-        # RUN FOR DRAG GRADIENTS
-        info = SU2.run.adjoint(config)
-        state.update(info)
-        #SU2.io.restart2solution(config,state)
-        # Gradient Projection
-        info = SU2.run.projection(config, step)
-        state.update(info)
-        get_gradients = info.get('GRADIENTS')
-        dcd_dx = get_gradients.get('DRAG')
+            # RUN FOR LIFT GRADIENTS
+            config.OBJECTIVE_FUNCTION = 'LIFT'
+            info = SU2.run.adjoint(config)
+            state.update(info)
+            #SU2.io.restart2solution(config,state)
+            # Gradient Projection
+            info = SU2.run.projection(config, step)
+            state.update(info)
+            get_gradients = info.get('GRADIENTS')
+            dcl_dx = get_gradients.get('LIFT')
 
-        # RUN FOR LIFT GRADIENTS
-        config.OBJECTIVE_FUNCTION = 'LIFT'
-        info = SU2.run.adjoint(config)
-        state.update(info)
-        #SU2.io.restart2solution(config,state)
-        # Gradient Projection
-        info = SU2.run.projection(config, step)
-        state.update(info)
-        get_gradients = info.get('GRADIENTS')
-        dcl_dx = get_gradients.get('LIFT')
+            n = len(CST)
+            m = len(dcd_dx)
+            dcst_dx = np.zeros((n, m))
 
-        n = len(CST)
-        m = len(dcd_dx)
-        dcst_dx = np.zeros((n, m))
+            wl_original, wu_original = wu, wl
+            dz = 0.0
+            N = 200
+            coord_old = cst_to_coordinates_from_kulfan(wl_original, wu_original, N, dz)
 
-        wl_original, wu_original = wu, wl
-        dz = 0.0
-        N = 200
-        coord_old = cst_to_coordinates_from_kulfan(wl_original, wu_original, N, dz)
+            design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
 
-        design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
-
-        # Gradients
-        if FDorCS == 'FD':
-            fd_step = 1e-6
-            for i in range(0, n):
-                wl_new = deepcopy(wl_original)
-                wu_new = deepcopy(wu_original)
-                if i < n/2:
-                    wl_new[i] += fd_step
-                else:
-                    wu_new[i-4] += fd_step
-                coor_new = cst_to_coordinates_from_kulfan(wl_new, wu_new, N, dz)
-                j = 0
-                for coor_d in design:
-                    if (coor_new[1][coor_d] - coord_old[1][coor_d]).real == 0:
-                        dcst_dx[i][j] = 0
+            # Gradients
+            if FDorCS == 'FD':
+                fd_step = 1e-6
+                for i in range(0, n):
+                    wl_new = deepcopy(wl_original)
+                    wu_new = deepcopy(wu_original)
+                    if i < n/2:
+                        wl_new[i] += fd_step
                     else:
-                        dcst_dx[i][j] = 1/((coor_new[1][coor_d] - coord_old[1][coor_d]).real / fd_step)
-                    j += 1
+                        wu_new[i-4] += fd_step
+                    coor_new = cst_to_coordinates_from_kulfan(wl_new, wu_new, N, dz)
+                    j = 0
+                    for coor_d in design:
+                        if (coor_new[1][coor_d] - coord_old[1][coor_d]).real == 0:
+                            dcst_dx[i][j] = 0
+                        else:
+                            dcst_dx[i][j] = 1/((coor_new[1][coor_d] - coord_old[1][coor_d]).real / fd_step)
+                        j += 1
 
-        elif FDorCS == 'CS':
-            step_size = 1e-20
-            cs_step = complex(0, step_size)
+            elif FDorCS == 'CS':
+                step_size = 1e-20
+                cs_step = complex(0, step_size)
 
-            for i in range(0, n):
-                wl_new = deepcopy(wl_original)
-                wu_new = deepcopy(wu_original)
-                if i >= n/2:
-                    wl_new[i] += cs_step
-                else:
-                    wu_new[i+4] += cs_step
-                coor_new = cst_to_coordinates_complex(wl_new, wu_new, N, dz)
-                j = 0
-                for coor_d in design:
-                    if coor_new[1][coor_d].imag == 0:
-                        dcst_dx[i][j] = 0
+                for i in range(0, n):
+                    wl_new = deepcopy(wl_original)
+                    wu_new = deepcopy(wu_original)
+                    if i >= n/2:
+                        wl_new[i] += cs_step
                     else:
-                        dcst_dx[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
-                    j += 1
-        else:
-            print 'Warning. FDorCS needs to be set to either FD or CS'
-        dcst_dx = np.matrix(dcst_dx)
-        dcl_dx = np.matrix(dcl_dx)
-        dcd_dx = np.matrix(dcd_dx)
+                        wu_new[i+4] += cs_step
+                    coor_new = cst_to_coordinates_complex(wl_new, wu_new, N, dz)
+                    j = 0
+                    for coor_d in design:
+                        if coor_new[1][coor_d].imag == 0:
+                            dcst_dx[i][j] = 0
+                        else:
+                            dcst_dx[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
+                        j += 1
+            else:
+                print 'Warning. FDorCS needs to be set to either FD or CS'
+            dcst_dx = np.matrix(dcst_dx)
+            dcl_dx = np.matrix(dcl_dx)
+            dcd_dx = np.matrix(dcd_dx)
 
-        dcl_dcst = dcst_dx * dcl_dx.T
-        dcd_dcst = dcst_dx * dcd_dx.T
+            dcl_dcst = dcst_dx * dcl_dx.T
+            dcd_dcst = dcst_dx * dcd_dx.T
 
-        # print cl, cd, dcl_dcst, dcd_dcst
+            # print cl, cd, dcl_dcst, dcd_dcst
+            return cl, cd, dcl_dcst, dcd_dcst
 
-        return cl, cd, dcl_dcst, dcd_dcst
+        return cl, cd
 
     def plot(self, single_figure=True):
         """plot cl/cd/cm polars
@@ -2207,8 +2205,8 @@ class CCAirfoil:
             a constructed CCAirfoil object
 
         """
-        alphas = np.linspace(-20, 20, 30)
-        Re = 1e6
+        alphas = np.linspace(-25, 25, 60)
+        Re = 1e7 #1e6
         af = Airfoil.initFromCST(CST, alphas, [Re])
         r_over_R = 0.5
         chord_over_r = 0.15

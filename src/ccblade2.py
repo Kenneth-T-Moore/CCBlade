@@ -22,7 +22,7 @@ class CCInit(Component):
     def __init__(self):
         super(CCInit, self).__init__()
         self.add_param('Rtip', val=0.0, units='m')
-        self.add_param('precone', val=0.0, units='rad')
+        self.add_param('precone', val=0.0, units='deg')
         self.add_param('precurveTip', val=0.0, units='m')
 
         self.add_output('rotorR', shape=1, units='m')
@@ -301,6 +301,7 @@ class AirfoilComp(Component):
     def airfoil_parameterization_methodology(self, CST, alpha, Re, FDorCS):
         # self.af = CCAirfoil.initFromCST(CST) #, [alpha], [Re])
         # alpha, Re, cl, cd, cm = self.af.createDataGrid()
+
         cl, cd = self.af.evaluate(alpha, Re)
         dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.derivatives(alpha, Re) #xfoilFlowGradients(CST, alpha, Re, FDorCS)
         return cl, cd, dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
@@ -427,6 +428,8 @@ class BEM(Component):
             unknowns['ap_sub'] = ap
             unknowns['da_dx'] = da_dx
             unknowns['dap_dx'] = dap_dx
+            if unknowns['phi_sub'] < 0.01:
+                pass
             # self.fzero = fzero
             # self.a = a
             # self.ap = ap
@@ -463,6 +466,8 @@ class BEM(Component):
             resids['phi_sub'] = fzero
             resids['a_sub'] = a - unknowns['a_sub']
             resids['ap_sub'] = ap - unknowns['ap_sub']
+            # if self.i == 11:
+            #     pass
             # self.fzero = fzero
             # self.a = a
             # self.ap = ap
@@ -556,6 +561,9 @@ class MUX(Component):
             self.add_param('cl'+str(i+1), val=0.0)
             self.add_param('cd'+str(i+1), val=0.0)
             self.add_param('W'+str(i+1), val=0.0, units='m/s')
+            self.add_param('alpha'+str(i+1), val=0.0, units='deg')
+        self.add_param('airfoil_parameterization', val=np.zeros((n, 8))) #, pass_by_obj=True)
+        self.add_param('airfoil_analysis_options', val={}, pass_by_obj=True)
 
         self.add_output('phi', val=np.zeros(n), units='deg')
         self.add_output('cl', val=np.zeros(n))
@@ -569,6 +577,13 @@ class MUX(Component):
 
     def solve_nonlinear(self, params, unknowns, resids):
         for i in range(self.n):
+            CST = params['airfoil_parameterization'][i]
+            alpha = params['alpha'+str(i+1)]
+            Re = 1e7
+            if params['airfoil_analysis_options']['CFDorXFOIL'] == 'CFD':
+                cl, cd,  = Airfoil.cfdGradients(CST, alpha, Re, params['airfoil_analysis_options']['iterations'], params['airfoil_analysis_options']['processors'], params['airfoil_analysis_options']['FDorCS'], Uinf=10.0, ComputeGradients=False)
+            else:
+                cl, cd, self.dcl_dcst, self.dcd_dcst = Airfoil.xfoilGradients(CST, alpha, Re, params['airfoil_analysis_options']['FDorCS'])
             unknowns['phi'][i] = params['phi'+str(i+1)]
             unknowns['cl'][i] = params['cl'+str(i+1)]
             unknowns['cd'][i] = params['cd'+str(i+1)]
@@ -577,14 +592,35 @@ class MUX(Component):
     def linearize(self, params, unknowns, resids):
         n = self.n
         J = {}
+        Re = 1e7
+        zero_cl = np.zeros((1, self.n * 8))
+        zero_cd = np.zeros((1, self.n * 8))
+
         for i in range(n):
+            CST = params['airfoil_parameterization'][i]
+            alpha = params['alpha'+str(i+1)]
+            if params['airfoil_analysis_options']['CFDorXFOIL'] == 'CFD':
+                cl, cd, dcl_dcst, dcd_dcst = Airfoil.cfdGradients(CST, alpha, Re, params['airfoil_analysis_options']['iterations'], params['airfoil_analysis_options']['processors'], params['airfoil_analysis_options']['FDorCS'], Uinf=10.0, ComputeGradients=True)
+            else:
+                cl, cd, dcl_dcst, dcd_dcst = Airfoil.xfoilGradients(CST, alpha, Re, params['airfoil_analysis_options']['FDorCS'])
+            zero_cl[0][i+i*8] = dcl_dcst[i]
+            zero_cd[0][i+i*8] = dcd_dcst[i]
             zeros = np.zeros(n)
             zeros[i] = 1
             J['phi', 'phi'+str(i+1)] = zeros
             J['cl', 'cl'+str(i+1)] = zeros
             J['cd', 'cd'+str(i+1)] = zeros
             J['W', 'W'+str(i+1)] = zeros
+        J['cl', 'airfoil_parameterization'] = zero_cl
+        J['cd', 'airfoil_parameterization'] = zero_cd
         return J
+
+    def get_req_procs(self):
+        """
+        min/max number of procs that this component can use
+        """
+        processors = 2
+        return (1, processors)
 
 class MUX_POWER(Component):
     """
@@ -903,7 +939,6 @@ class CCEvaluate(Component):
 
         # Power
         P = Q * Omega*pi/30.0  # RPM to rad/s
-
         # normalize if necessary
         q = 0.5 * rho * Uinf**2
         A = pi * rotorR**2
@@ -1119,8 +1154,8 @@ class BrentGroup(Group):
         sub.nl_solver = Brent()
         self.ln_solver = ScipyGMRES()
         self.nl_solver = NLGaussSeidel()
-        self.nl_solver.options['atol'] = 1e-12 #TODO Check
-        self.nl_solver.options['rtol'] = 1e-12
+        # self.nl_solver.options['atol'] = 1e-12 #TODO Check
+        # self.nl_solver.options['rtol'] = 1e-12
         # sub.ln_solver = ScipyGMRES()
         # self.ln_solver = ScipyGMRES()
         # self.nl_solver = Brent()
@@ -1396,11 +1431,18 @@ if __name__ == "__main__":
     afinit2 = CCAirfoil.initFromCST  # just for shorthand
     # load all airfoils
     airfoil_types = [0]*8
-    airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
-    airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+    # airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+    # airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
 
-    for i in range(len(airfoil_types)-2):
-        airfoil_types[i+2] = afinit2(CST[i])
+    for i in range(len(airfoil_types)):
+        airfoil_types[i] = afinit2(CST[i])
+
+    # airfoil_types = [0]*8
+    # airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+    # airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+
+    # for i in range(len(airfoil_types)-2):
+    #     airfoil_types[i+2] = afinit2(CST[i+2])
 
     # place at appropriate radial stations
     af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
@@ -1454,9 +1496,9 @@ if __name__ == "__main__":
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     azimuth = 90.
     n = len(r)
-    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='CS', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
+    # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='CS', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
     # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
-    # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='CFD', FDorCS='FD', iterations=20, processors=0)
+    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='CFD', FDorCS='FD', iterations=20, processors=0)
 
     #### Test LoadsGroup
     # loads = Problem(impl=impl)
@@ -1512,7 +1554,9 @@ if __name__ == "__main__":
     tsr = 7.55
     pitch = np.array([0.0])
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
-
+    # tsr = np.linspace(14, 14, 1)
+    # Omega = 10.0 * np.ones_like(tsr)
+    # Uinf = Omega*pi/30.0 * Rtip/tsr
     n2 = len(Uinf)
 
     ccblade = Problem(impl=impl)
@@ -1567,5 +1611,5 @@ if __name__ == "__main__":
     print 'CP', ccblade['CP']
     print 'CT', ccblade['CT']
     print 'CQ', ccblade['CQ']
-    print ccblade['airfoil_parameterization']
+    # print ccblade['airfoil_parameterization']
 
