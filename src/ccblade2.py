@@ -9,7 +9,7 @@ from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from openmdao.core.mpi_wrap import MPI
 # from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
-from airfoilprep_free import Airfoil
+from airfoilprep_free import Airfoil, CCAirfoil
 from brent import Brent
 
 class CCInit(Component):
@@ -281,8 +281,9 @@ class AirfoilComp(Component):
         super(AirfoilComp, self).__init__()
         self.add_param('alpha_sub', shape=1, units='deg')
         self.add_param('Re_sub', shape=1)
-        self.add_param('airfoil_parameterization', val=np.zeros((17, 8))) #, pass_by_obj=True)
+        self.add_param('airfoil_parameterization', val=np.zeros((n, 8))) #, pass_by_obj=True)
         self.add_param('airfoil_analysis_options', val={}, pass_by_obj=True)
+        self.add_param('af', val=np.zeros(n), pass_by_obj=True)
 
         self.add_output('cl_sub', shape=1)
         self.add_output('cd_sub', shape=1)
@@ -298,9 +299,10 @@ class AirfoilComp(Component):
         self.n = n
 
     def airfoil_parameterization_methodology(self, CST, alpha, Re, FDorCS):
-        self.af = Airfoil.initFromCST(CST, [alpha], [Re])
-        alpha, Re, cl, cd, cm = self.af.createDataGrid()
-        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.xfoilFlowGradients(CST, alpha, Re, FDorCS)
+        # self.af = CCAirfoil.initFromCST(CST) #, [alpha], [Re])
+        # alpha, Re, cl, cd, cm = self.af.createDataGrid()
+        cl, cd = self.af.evaluate(alpha, Re)
+        dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe = self.af.derivatives(alpha, Re) #xfoilFlowGradients(CST, alpha, Re, FDorCS)
         return cl, cd, dcl_dalpha, dcl_dRe, dcd_dalpha, dcd_dRe
 
     def airfoil_parameterization_methodology_dv(self, CST, alpha, Re, CFDorXFOIL, iterations, processors, FDorCS):
@@ -314,9 +316,10 @@ class AirfoilComp(Component):
         FDorCS = params['airfoil_analysis_options']['FDorCS']
         if self.i == 0:
             unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = 0.0, 0.50, 0.0, 0.0, 0.0, 0.0
-        elif self.i == 1:
+        elif self.i == 1 or self.i == 2:
             unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = 0.0, 0.35, 0.0, 0.0, 0.0, 0.0
         else:
+            self.af = params['af'][self.i]
             unknowns['cl_sub'], unknowns['cd_sub'], unknowns['dcl_dalpha'], unknowns['dcl_dRe'], unknowns['dcd_dalpha'], unknowns['dcd_dRe'] = self.airfoil_parameterization_methodology(params['airfoil_parameterization'][self.i], params['alpha_sub'], params['Re_sub'], FDorCS)
 
     def list_deriv_vars(self):
@@ -329,7 +332,7 @@ class AirfoilComp(Component):
         airfoil_analysis = params['airfoil_analysis_options']
         if self.i == 0:
             cl, cd, dcl_dcst, dcd_dcst = 0.0, 0.50, np.zeros((8, 1)), np.zeros((8, 1))
-        elif self.i == 1:
+        elif self.i == 1 or self.i == 2:
             cl, cd, dcl_dcst, dcd_dcst = 0.0, 0.35, np.zeros((8, 1)), np.zeros((8, 1))
         else:
             cl, cd, dcl_dcst, dcd_dcst = self.airfoil_parameterization_methodology_dv(params['airfoil_parameterization'][self.i], params['alpha_sub'], params['Re_sub'], airfoil_analysis['CFDorXFOIL'], airfoil_analysis['iterations'], airfoil_analysis['processors'], airfoil_analysis['FDorCS'])
@@ -1166,7 +1169,7 @@ class Loads(Group):
         self.add('theta', IndepVarComp('theta', val=np.zeros(n), units='deg'), promotes=['*'])
         self.add('precurve', IndepVarComp('precurve', val=np.zeros(n), units='m'), promotes=['*'])
         self.add('presweep', IndepVarComp('presweep', val=np.zeros(n), units='m'), promotes=['*'])
-        # self.add('af', IndepVarComp('af', val=np.zeros(n)), promotes=['*'])
+        self.add('af', IndepVarComp('af', val=np.zeros(n)), promotes=['*'])
         self.add('airfoil_parameterization', IndepVarComp('airfoil_parameterization', val=np.zeros((n, 8))), promotes=['*'])
         self.add('airfoil_analysis_options', IndepVarComp('airfoil_analysis_options', {}, pass_by_obj=True), promotes=['*'])
         self.add('bemoptions', IndepVarComp('bemoptions', {}, pass_by_obj=True), promotes=['*'])
@@ -1176,7 +1179,7 @@ class Loads(Group):
         self.add('mux', MUX(n), promotes=['*'])
         pg = self.add('parallel', ParallelGroup(), promotes=['*'])
         for i in range(n):
-            pg.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options'])
+            pg.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options', 'af'])
             self.connect('r', 'brent'+str(i+1)+'.r', src_indices=[i])
             self.connect('chord', 'brent'+str(i+1)+'.chord', src_indices=[i])
             self.connect('theta', 'brent'+str(i+1)+'.theta', src_indices=[i])
@@ -1196,7 +1199,7 @@ class LoadsGroup_to_RotorSE(Group):
         self.add('wind', WindComponents(n), promotes=['*'])
         self.add('mux', MUX(n), promotes=['*'])
         for i in range(n):
-            self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options'])
+            self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options', 'af'])
             self.connect('r', 'brent'+str(i+1)+'.r', src_indices=[i])
             self.connect('chord', 'brent'+str(i+1)+'.chord', src_indices=[i])
             # self.connect('theta', 'brent'+str(i+1)+'.theta', src_indices=[i])
@@ -1215,7 +1218,7 @@ class Sweep(Group):
         self.add('wind', WindComponents(n), promotes=['*'])
         self.add('mux', MUX(n), promotes=['*'])
         for i in range(n):
-            self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'bemoptions', 'airfoil_parameterization', 'airfoil_analysis_options'])
+            self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'bemoptions', 'airfoil_parameterization', 'airfoil_analysis_options', 'af'])
             self.connect('Vx', 'brent'+str(i+1)+'.Vx', src_indices=[i])
             self.connect('Vy', 'brent'+str(i+1)+'.Vy', src_indices=[i])
             self.connect('brent'+str(i+1)+'.phi_sub', 'phi'+str(i+1))
@@ -1230,12 +1233,12 @@ class SweepGroup(Group):
         self.add('init', CCInit(), promotes=['*'])
         for i in range(nSector):
             azimuth = pi/180.0*360.0*float(i)/nSector
-            self.add('group'+str(i+1), Sweep(azimuth, n), promotes=['r', 'Uinf', 'pitch', 'Rtip', 'Omega', 'chord', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'B', 'bemoptions', 'airfoil_parameterization', 'airfoil_analysis_options'])
+            self.add('group'+str(i+1), Sweep(azimuth, n), promotes=['r', 'Uinf', 'pitch', 'Rtip', 'Omega', 'chord', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'B', 'bemoptions', 'airfoil_parameterization', 'af', 'airfoil_analysis_options'])
 
 class FlowSweep(Group):
     def __init__(self, nSector, n):
         super(FlowSweep, self).__init__()
-        self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'r', 'chord',  'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'precone', 'tilt', 'yaw', 'shearExp', 'hubHt', 'B', 'airfoil_parameterization', 'airfoil_analysis_options', 'bemoptions'])
+        self.add('load_group', SweepGroup(nSector, n), promotes=['Uinf', 'Omega', 'pitch', 'Rtip', 'r', 'chord',  'rho', 'mu', 'Rhub', 'rotorR', 'precurve', 'presweep', 'precurveTip', 'precone', 'tilt', 'yaw', 'shearExp', 'hubHt', 'B', 'airfoil_parameterization', 'airfoil_analysis_options', 'af', 'bemoptions'])
         self.add('eval', CCEvaluate(n, nSector), promotes=['Uinf', 'Rtip', 'Omega', 'r', 'Rhub', 'B', 'precurve', 'presweep', 'presweepTip', 'precurveTip', 'precone', 'nSector', 'rotorR', 'rho', 'CP', 'CT', 'CQ', 'P', 'T', 'Q'])
         for i in range(nSector):
             self.connect('load_group.group' + str(i+1) + '.loads.Np', 'eval.Np' + str(i+1))
@@ -1263,7 +1266,7 @@ class CCBlade(Group):
         self.add('mu', IndepVarComp('mu', 0.0, units='kg/(m*s)'), promotes=['*'])
         self.add('rho', IndepVarComp('rho', 0.0, units='kg/m**3'), promotes=['*'])
         self.add('shearExp', IndepVarComp('shearExp', 0.0), promotes=['*'])
-        # self.add('af', IndepVarComp('af', np.zeros(n), pass_by_obj=True), promotes=['*'])
+        self.add('af', IndepVarComp('af', np.zeros(n), pass_by_obj=True), promotes=['*'])
         self.add('airfoil_parameterization', IndepVarComp('airfoil_parameterization', val=np.zeros((n, 8))), promotes=['*'])
         self.add('airfoil_analysis_options', IndepVarComp('airfoil_analysis_options', {}), promotes=['*'])
         self.add('B', IndepVarComp('B', 3, pass_by_obj=True), promotes=['*'])
@@ -1272,7 +1275,7 @@ class CCBlade(Group):
         self.add('mux_power', MUX_POWER(n2), promotes=['*'])
         pg = self.add('parallel', ParallelGroup(), promotes=['*'])
         for i in range(n2):
-            pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'airfoil_parameterization', 'airfoil_analysis_options', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord'])
+            pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'airfoil_parameterization', 'af','airfoil_analysis_options', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord'])
             self.connect('Uinf', 'results'+str(i)+'.Uinf', src_indices=[i])
             self.connect('pitch', 'results'+str(i)+'.pitch', src_indices=[i])
             self.connect('Omega', 'results'+str(i)+'.Omega', src_indices=[i])
@@ -1297,7 +1300,7 @@ class CCBlade_to_RotorSE_connection(Group):
             self.add('mux_power', MUX_POWER(n2), promotes=['*'])
             pg = self.add('parallel', ParallelGroup(), promotes=['*'])
             for i in range(n2):
-                pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'airfoil_parameterization', 'airfoil_analysis_options', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord'])
+                pg.add('results'+str(i), FlowSweep(nSector, n), promotes=['Rhub', 'Rtip', 'precone', 'tilt', 'hubHt', 'precurve', 'presweep', 'yaw', 'precurveTip', 'presweepTip', 'airfoil_parameterization', 'af', 'airfoil_analysis_options', 'bemoptions', 'B', 'rho', 'mu', 'shearExp', 'nSector', 'r', 'chord'])
                 self.connect('Uinf', 'results'+str(i)+'.Uinf', src_indices=[i])
                 self.connect('pitch', 'results'+str(i)+'.pitch', src_indices=[i])
                 self.connect('Omega', 'results'+str(i)+'.Omega', src_indices=[i])
@@ -1317,7 +1320,7 @@ class CCBlade_to_RotorSE_connection(Group):
             self.add('wind', WindComponents(n), promotes=['*'])
             self.add('mux', MUX(n), promotes=['*'])
             for i in range(n):
-                self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options'])
+                self.add('brent'+str(i+1), BrentGroup(n, i), promotes=['Rhub', 'Rtip', 'rho', 'mu', 'Omega', 'B', 'pitch', 'airfoil_parameterization', 'bemoptions', 'airfoil_analysis_options', 'af'])
                 self.connect('r', 'brent'+str(i+1)+'.r', src_indices=[i])
                 self.connect('chord', 'brent'+str(i+1)+'.chord', src_indices=[i])
                 self.connect('theta', 'brent'+str(i+1)+'.theta', src_indices=[i])
@@ -1386,25 +1389,25 @@ if __name__ == "__main__":
             -0.38027535114760153, -0.75920832612723133, -0.21834261746205941, 0.086359012110824224, 0.38364567865371835, 0.48445264573011815, 0.26999944648962521, 0.34675843509167931,
             -0.49209940079930325, -0.72861624849999296, -0.38147646962813714, 0.13679205926397994, 0.50396496117640877, 0.54798355691567613, 0.37642896917099616, 0.37017796580840234]
 
-    CST = [[w0],[w0], [wl_6], [wl_5], [wl_4], [wl_3], [wl_2], [wl_1]]
+    CST = [[wl_6],[wl_6], [wl_6], [wl_5], [wl_4], [wl_3], [wl_2], [wl_1]]
 
     basepath = '5MW_AFFiles' + os.path.sep
-    # afinit = CCAirfoil.initFromAerodynFile
-    # afinit2 = CCAirfoil.initFromCST  # just for shorthand
+    afinit = CCAirfoil.initFromAerodynFile
+    afinit2 = CCAirfoil.initFromCST  # just for shorthand
     # load all airfoils
-    # airfoil_types = [0]*8
-    # airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
-    # airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+    airfoil_types = [0]*8
+    airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+    airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
 
-    # for i in range(len(airfoil_types)-2):
-    #     airfoil_types[i+2] = afinit2(CST[i])
+    for i in range(len(airfoil_types)-2):
+        airfoil_types[i+2] = afinit2(CST[i])
 
     # place at appropriate radial stations
     af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
 
-    # af = [0]*len(r)
-    # for i in range(len(r)):
-    #     af[i] = airfoil_types[af_idx[i]]
+    af = [0]*len(r)
+    for i in range(len(r)):
+        af[i] = airfoil_types[af_idx[i]]
 
     # CST_full_2 = np.zeros(len(CST_full))
     # for i in range(len(CST_full_2)):
@@ -1451,7 +1454,8 @@ if __name__ == "__main__":
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
     azimuth = 90.
     n = len(r)
-    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
+    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='CS', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
+    # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
     # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='CFD', FDorCS='FD', iterations=20, processors=0)
 
     #### Test LoadsGroup
@@ -1508,6 +1512,7 @@ if __name__ == "__main__":
     tsr = 7.55
     pitch = np.array([0.0])
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
+
     n2 = len(Uinf)
 
     ccblade = Problem(impl=impl)
@@ -1547,13 +1552,14 @@ if __name__ == "__main__":
     ccblade['airfoil_parameterization'] = CST
     ccblade['bemoptions'] = bemoptions
     ccblade['airfoil_analysis_options'] = airfoil_analysis_options
+    ccblade['af'] = af
 
     # import time
     # t0 = time.time()
     ccblade.run()
     partial = open('partial.txt', 'w')
     total = open('total.txt', 'w')
-    partial_dict = ccblade.check_partial_derivatives(out_stream=partial)
+    # partial_dict = ccblade.check_partial_derivatives(out_stream=partial)
     # ccblade.check_total_derivatives(out_stream=total)
     # t = time.time()
     # print t - t0
@@ -1562,3 +1568,4 @@ if __name__ == "__main__":
     print 'CT', ccblade['CT']
     print 'CQ', ccblade['CQ']
     print ccblade['airfoil_parameterization']
+
