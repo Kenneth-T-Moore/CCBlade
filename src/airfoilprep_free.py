@@ -1349,7 +1349,7 @@ class Airfoil(object):
             airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
             airfoil.re = Re
             airfoil.mach = 0.0 #Uinf / 340.29
-            airfoil.iter = 100
+            airfoil.iter = 1000
 
             angle = alpha
             cl, cd, cm, lexitflag = airfoil.solveAlpha(angle)
@@ -1406,19 +1406,25 @@ class Airfoil(object):
                 dcl_dcst[i+4] = np.imag(cl_complex)/np.imag(cs_step)
                 dcd_dcst[i+4] = np.imag(cd_complex)/np.imag(cs_step)
         else:
-            step_size = 1e-6
+            step_size = 1e-2
             fd_step = step_size
             for i in range(len(wl)):
-                wl_fd = np.real(deepcopy(wl))
-                wl_fd[i] += fd_step
-                cl_fd, cd_fd = cstReal(alpha, Re, wl_fd, np.real(wu), N, dz, Uinf=10.0)
-                dcl_dcst[i] = (cl - cl_fd)/fd_step
-                dcd_dcst[i] = (cd - cl_fd)/fd_step
-                wu_fd = np.real(deepcopy(wu))
-                wu_fd[i] += fd_step
-                cl_fd, cd_fd = cstReal(alpha, Re, np.real(wl), wu_fd, N, dz, Uinf=10.0)
-                dcl_dcst[i+4] = (cl - cl_fd)/fd_step
-                dcd_dcst[i+4] = (cd - cl_fd)/fd_step
+                wl_fd1 = np.real(deepcopy(wl))
+                wl_fd2 = np.real(deepcopy(wl))
+                wl_fd1[i] -= fd_step
+                wl_fd2[i] += fd_step
+                cl_fd1, cd_fd1 = cstReal(alpha, Re, wl_fd1, np.real(wu), N, dz, Uinf=10.0)
+                cl_fd2, cd_fd2 = cstReal(alpha, Re, wl_fd2, np.real(wu), N, dz, Uinf=10.0)
+                dcl_dcst[i] = (cl_fd2 - cl_fd1)/(2.*fd_step)
+                dcd_dcst[i] = (cd_fd2 - cd_fd1)/(2.*fd_step)
+                wu_fd1 = np.real(deepcopy(wu))
+                wu_fd2 = np.real(deepcopy(wu))
+                wu_fd1[i] -= fd_step
+                wu_fd2[i] += fd_step
+                cl_fd1, cd_fd1 = cstReal(alpha, Re, np.real(wl), wu_fd1, N, dz, Uinf=10.0)
+                cl_fd2, cd_fd2 = cstReal(alpha, Re, np.real(wl), wu_fd2, N, dz, Uinf=10.0)
+                dcl_dcst[i+4] = (cl_fd2 - cl_fd1)/(2.*fd_step)
+                dcd_dcst[i+4] = (cd_fd2 - cd_fd1)/(2.*fd_step)
 
         return cl, cd, dcl_dcst, dcd_dcst
 
@@ -1498,8 +1504,10 @@ class Airfoil(object):
 
         # Config and state
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
-        filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
-        # filename = basepath + os.path.sep + 'test_incomp_rans.cfg'
+        # filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
+        filename = basepath + os.path.sep + 'test_incomp_rans.cfg'
+        # filename = basepath + os.path.sep + 'turb_nasa.cfg'
+
         config = SU2.io.Config(filename)
         state  = SU2.io.State()
         config.NUMBER_PART = partitions
@@ -1579,19 +1587,19 @@ class Airfoil(object):
                 cs_step = complex(0, step_size)
 
                 for i in range(0, n):
-                    wl_new = deepcopy(wl_original)
-                    wu_new = deepcopy(wu_original)
+                    wl_new = deepcopy(wl_original.astype(complex))
+                    wu_new = deepcopy(wu_original.astype(complex))
                     if i >= n/2:
-                        wl_new[i] += cs_step
+                        wl_new[i-4] += cs_step
                     else:
-                        wu_new[i+4] += cs_step
+                        wu_new[i] += cs_step
                     coor_new = cst_to_coordinates_complex(wl_new, wu_new, N, dz)
                     j = 0
                     for coor_d in design:
                         if coor_new[1][coor_d].imag == 0:
                             dcst_dx[i][j] = 0
                         else:
-                            dcst_dx[i][j] = 1/(coor_new[1][coor_d].imag / step_size)
+                            dcst_dx[i][j] = 1/(coor_new[1][coor_d].imag / np.imag(cs_step))
                         j += 1
             else:
                 print 'Warning. FDorCS needs to be set to either FD or CS'
