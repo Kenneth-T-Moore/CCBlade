@@ -747,7 +747,7 @@ class Airfoil(object):
 
 
     @classmethod
-    def initFromCST(cls, CST, alphas, Re, polarType=Polar):
+    def initFromCST(cls, CST, alphas, Re, CFDorXFOIL, processors=0, iterations=1000, polarType=Polar):
         """Construct Airfoil object from airfoil coordinate file
 
         Parameters
@@ -778,57 +778,69 @@ class Airfoil(object):
             CST = np.array([CST])
 
 
+
         for i in range(n2):
-            wl, wu, N, dz = CST_to_kulfan(CST[0])
 
-            [x, y] = cst_to_coordinates_from_kulfan(wl, wu, N, dz)
+            if CFDorXFOIL == 'XFOIL':
+                wl, wu, N, dz = CST_to_kulfan(CST[0])
 
-            basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
-            airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates.dat'
+                [x, y] = cst_to_coordinates_from_kulfan(wl, wu, N, dz)
 
-            coord_file = open(airfoil_shape_file, 'w')
+                basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
+                airfoil_shape_file = basepath + os.path.sep + 'cst_coordinates.dat'
 
-            print >> coord_file, 'CST'
-            for i in range(len(x)):
-                print >> coord_file, '{:<10f}\t{:<10f}'.format(x[i], y[i])
+                coord_file = open(airfoil_shape_file, 'w')
 
-            coord_file.close()
+                print >> coord_file, 'CST'
+                for i in range(len(x)):
+                    print >> coord_file, '{:<10f}\t{:<10f}'.format(x[i], y[i])
 
-            # read in coordinate file
-            # with suppress_stdout_stderr():
-            airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
-            airfoil.re = Re
-            airfoil.mach = 0.00
-            airfoil.iter = 100
+                coord_file.close()
 
-            cl = np.zeros(len(alphas))
-            cd = np.zeros(len(alphas))
-            cm = np.zeros(len(alphas))
-            to_delete = np.zeros(0)
-            for j in range(len(alphas)):
-                cl[j], cd[j], cm[j], lexitflag = airfoil.solveAlpha(alphas[j])
-                if lexitflag:
-                    cl[j] = -10.0
-                    cd[j] = 0.0
-            # error handling in case of XFOIL failure
-            for k in range(len(cl)):
-                if cl[k] == -10.0:
-                    if k == 0:
-                        cl[k] = cl[k+1] - cl[k+2] + cl[k+1]
-                        cd[k] = cd[k+1] - cd[k+2] + cd[k+1]
-                    elif k == len(cl)-1:
-                        cl[k] = cl[k-1] - cl[k-2] + cl[k-1]
-                        cd[k] = cd[k-1] - cd[k-2] + cd[k-1]
-                    else:
-                        cl[k] = (cl[k+1] - cl[k-1])/2.0 + cl[k-1]
-                        cd[k] = (cd[k+1] - cd[k-1])/2.0 + cd[k-1]
-                if cl[k] == -10.0 or cl[k] < -2. or cl[k] > 2. or cd[k] < 0.00001 or cd[k] > 0.5 or not np.isfinite(cd[k]) or not np.isfinite(cl[k]):
-                    to_delete = np.append(to_delete, k)
-            cl = np.delete(cl, to_delete)
-            cd = np.delete(cd, to_delete)
-            alphas = np.delete(alphas, to_delete)
+                # read in coordinate file
+                # with suppress_stdout_stderr():
+                airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
+                airfoil.re = Re
+                airfoil.mach = 0.00
+                airfoil.iter = 100
 
-            polars.append(polarType(Re, alphas, cl, cd, cm))
+                cl = np.zeros(len(alphas))
+                cd = np.zeros(len(alphas))
+                cm = np.zeros(len(alphas))
+                to_delete = np.zeros(0)
+                for j in range(len(alphas)):
+                    cl[j], cd[j], cm[j], lexitflag = airfoil.solveAlpha(alphas[j])
+                    if lexitflag:
+                        cl[j] = -10.0
+                        cd[j] = 0.0
+                # error handling in case of XFOIL failure
+                for k in range(len(cl)):
+                    if cl[k] == -10.0:
+                        if k == 0:
+                            cl[k] = cl[k+1] - cl[k+2] + cl[k+1]
+                            cd[k] = cd[k+1] - cd[k+2] + cd[k+1]
+                        elif k == len(cl)-1:
+                            cl[k] = cl[k-1] - cl[k-2] + cl[k-1]
+                            cd[k] = cd[k-1] - cd[k-2] + cd[k-1]
+                        else:
+                            cl[k] = (cl[k+1] - cl[k-1])/2.0 + cl[k-1]
+                            cd[k] = (cd[k+1] - cd[k-1])/2.0 + cd[k-1]
+                    if cl[k] == -10.0 or cl[k] < -2. or cl[k] > 2. or cd[k] < 0.00001 or cd[k] > 0.5 or not np.isfinite(cd[k]) or not np.isfinite(cl[k]):
+                        to_delete = np.append(to_delete, k)
+                cl = np.delete(cl, to_delete)
+                cd = np.delete(cd, to_delete)
+                alphas = np.delete(alphas, to_delete)
+
+                polars.append(polarType(Re, alphas, cl, cd, cm))
+
+            else:
+                cl = np.zeros(len(alphas))
+                cd = np.zeros(len(alphas))
+                cm = np.zeros(len(alphas))
+                for j in range(len(alphas)):
+                    cl[j], cd[j],  = Airfoil.cfdGradients(CST[0], alphas[j], Re, 1000, 0, 'CS', Uinf=10.0, ComputeGradients=False)
+                polars.append(polarType(Re, alphas, cl, cd, cm))
+
 
         return cls(polars)
 
@@ -1504,8 +1516,8 @@ class Airfoil(object):
 
         # Config and state
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
-        # filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
-        filename = basepath + os.path.sep + 'test_incomp_rans.cfg'
+        filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
+        # filename = basepath + os.path.sep + 'test_incomp_rans.cfg'
         # filename = basepath + os.path.sep + 'turb_nasa.cfg'
 
         config = SU2.io.Config(filename)
@@ -1518,12 +1530,27 @@ class Airfoil(object):
 
         config.WRT_CSV_SOL = 'YES'
         config.MESH_FILENAME = mesh_filename
-        config.AoA = np.degrees(alpha)
+        config.AoA = alpha #np.degrees(alpha)
         Ma = Uinf / 340.29  # Speed of sound at sea level
         config.MACH_NUMBER = Ma
         config.REYNOLDS_NUMBER = Re
         # find solution files if they exist
         # state.find_files(config)
+        ffdtag = []
+        kind = []
+        marker = []
+        param = []
+        scale = []
+        for i in range(len(x)):
+            ffdtag.append([])
+            kind.append('HICKS_HENNE')
+            marker.append(['airfoil'])
+            if i < len(x) / 2.0:
+                param.append([0.0, x[i]])
+            else:
+                param.append([1.0, x[i]])
+            scale.append(1.0)
+        config.DEFINITION_DV = dict(FFDTAG=ffdtag, KIND=kind, MARKER=marker, PARAM=param, SCALE=scale)
         state.FILES.MESH = config.MESH_FILENAME
 
 
@@ -1552,6 +1579,12 @@ class Airfoil(object):
             get_gradients = info.get('GRADIENTS')
             dcl_dx = get_gradients.get('LIFT')
 
+            where_are_NaNs_cl = np.isnan(dcl_dx)
+            dcl_dx[where_are_NaNs_cl] = 0.0
+
+            where_are_NaNs_cl = np.isnan(dcl_dx)
+            dcd_dx[where_are_NaNs_cl] = 0.0
+
             n = len(CST)
             m = len(dcd_dx)
             dcst_dx = np.zeros((n, m))
@@ -1561,9 +1594,10 @@ class Airfoil(object):
             N = 200
             coord_old = cst_to_coordinates_from_kulfan(wl_original, wu_original, N, dz)
 
-            design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
-
+            # design = [85, 79, 74, 70, 67, 63, 60, 56, 53, 50, 47, 43, 40, 37, 33, 29, 25, 21, 14, 115, 121, 126, 130, 133, 137, 140, 144, 147, 150, 153, 157, 160, 163, 167, 171, 175, 179, 186]
+            design = range(0, len(x))
             # Gradients
+            FDorCS = 'FD'
             if FDorCS == 'FD':
                 fd_step = 1e-6
                 for i in range(0, n):
@@ -2199,7 +2233,7 @@ class CCAirfoil:
         return cls(alpha, Re, cl, cd, cm)
 
     @classmethod
-    def initFromCST(cls, CST):
+    def initFromCST(cls, CST, CFDorXFOIL, processors=0, iterations=1000,):
         """convenience method for initializing with AeroDyn formatted files
 
         Parameters
@@ -2213,9 +2247,9 @@ class CCAirfoil:
             a constructed CCAirfoil object
 
         """
-        alphas = np.linspace(-25, 25, 60)
+        alphas = np.linspace(-15, 15, 20)
         Re = 1e7 #1e6
-        af = Airfoil.initFromCST(CST, alphas, [Re])
+        af = Airfoil.initFromCST(CST, alphas, [Re], CFDorXFOIL, processors=processors, iterations=iterations)
         r_over_R = 0.5
         chord_over_r = 0.15
         tsr = 7.55
