@@ -838,7 +838,7 @@ class Airfoil(object):
                 cd = np.zeros(len(alphas))
                 cm = np.zeros(len(alphas))
                 for j in range(len(alphas)):
-                    cl[j], cd[j],  = Airfoil.cfdGradients(CST[0], alphas[j], Re, 1000, 0, 'CS', Uinf=10.0, ComputeGradients=False)
+                    cl[j], cd[j],  = Airfoil.cfdGradients(CST[0], alphas[j], Re, iterations, processors, 'CS', Uinf=10.0, ComputeGradients=False)
                 polars.append(polarType(Re, alphas, cl, cd, cm))
 
 

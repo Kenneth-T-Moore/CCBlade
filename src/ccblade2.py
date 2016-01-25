@@ -74,7 +74,6 @@ class WindComponents(Component):
 
     def solve_nonlinear(self, params, unknowns, resids):
         unknowns['Vx'], unknowns['Vy'] = _bem.windcomponents(params['r'], params['precurve'], params['presweep'], params['precone'], params['yaw'], params['tilt'], params['azimuth'], params['Uinf'], params['Omega'], params['hubHt'], params['shearExp'])
-
     def list_deriv_vars(self):
 
         inputs = ('r', 'precurve', 'presweep', 'Uinf', 'precone', 'azimuth', 'tilt', 'yaw', 'Omega', 'hubHt')
@@ -171,12 +170,12 @@ class FlowCondition(Component):
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
+        self.i = i
         # self.fd_options['force_fd'] = True
 
     def solve_nonlinear(self, params, unknowns, resids):
 
         alpha, W, Re = _bem.relativewind(params['phi_sub'], params['a_sub'], params['ap_sub'], params['Vx'], params['Vy'], params['pitch'], params['chord'], params['theta'], params['rho'], params['mu'])
-
         unknowns['dalpha_dx'] = np.array([1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0])
         unknowns['dRe_dx'] = np.array([0.0, Re/params['chord'], 0.0, Re*params['Vx']/W**2, Re*params['Vy']/W**2, 0.0, 0.0, 0.0, 0.0])
         unknowns['alpha_sub'] = alpha
@@ -600,28 +599,30 @@ class MUX(Component):
         dcd_dcst_total = np.zeros((1, self.n * 8))
 
         for i in range(n):
-            CST = params['airfoil_parameterization'][i]
-            alpha = params['alpha'+str(i+1)]
-            if params['airfoil_analysis_options']['CFDorXFOIL'] == 'CFD':
-                if i < 5:
-                    cl, cd, dcl_dcst, dcd_dcst = 0.0, 0.0, np.zeros(8), np.zeros(8)
-                else:
-                    cl, cd, dcl_dcst, dcd_dcst = Airfoil.cfdGradients(CST, alpha, Re, params['airfoil_analysis_options']['iterations'], params['airfoil_analysis_options']['processors'], params['airfoil_analysis_options']['FDorCS'], Uinf=10.0, ComputeGradients=True)
-            else:
-                cl, cd, dcl_dcst, dcd_dcst = Airfoil.xfoilGradients(CST, alpha, Re, params['airfoil_analysis_options']['FDorCS'])
-            if i == 5:
-                pass
-            for j in range(len(dcd_dcst)):
-                dcl_dcst_total[0][j+i*8] = dcl_dcst[j]
-                dcd_dcst_total[0][j+i*8] = dcd_dcst[j]
+            # CST = params['airfoil_parameterization'][i]
+            # alpha = params['alpha'+str(i+1)]
+            # if params['airfoil_analysis_options']['CFDorXFOIL'] == 'CFD':
+            #     if i < 5:
+            #         cl, cd, dcl_dcst, dcd_dcst = 0.0, 0.0, np.zeros(8), np.zeros(8)
+            #     else:
+            #         cl, cd, dcl_dcst, dcd_dcst = Airfoil.cfdGradients(CST, alpha, Re, params['airfoil_analysis_options']['iterations'], params['airfoil_analysis_options']['processors'], params['airfoil_analysis_options']['FDorCS'], Uinf=10.0, ComputeGradients=True)
+            # else:
+            #     cl, cd, dcl_dcst, dcd_dcst = Airfoil.xfoilGradients(CST, alpha, Re, params['airfoil_analysis_options']['FDorCS'])
+            # if i == 5:
+            #     pass
+            # for j in range(len(dcd_dcst)):
+            #     dcl_dcst_total[0][j+i*8] = dcl_dcst[j]
+            #     dcd_dcst_total[0][j+i*8] = dcd_dcst[j]
             zeros = np.zeros(n)
             zeros[i] = 1
             J['phi', 'phi'+str(i+1)] = zeros
             J['cl', 'cl'+str(i+1)] = zeros
             J['cd', 'cd'+str(i+1)] = zeros
             J['W', 'W'+str(i+1)] = zeros
-        J['cl', 'airfoil_parameterization'] = dcl_dcst_total
-        J['cd', 'airfoil_parameterization'] = dcd_dcst_total
+            # J['cd', 'cd'+str(i+1)] = zeros
+            # J['W', 'W'+str(i+1)] = zeros
+        # J['cl', 'airfoil_parameterization'] = dcl_dcst_total
+        # J['cd', 'airfoil_parameterization'] = dcd_dcst_total
         return J
 
     # def get_req_procs(self):
@@ -1155,9 +1156,10 @@ class Loads_for_RotorSE(Component):
 class BrentGroup(Group):
     def __init__(self, n, i):
         super(BrentGroup, self).__init__()
-        self.add('flow', FlowCondition(), promotes=['*'])
-        self.add('airfoils', AirfoilComp(n, i), promotes=['*'])
+
         sub = self.add('sub', Group(), promotes=['*'])
+        sub.add('flow', FlowCondition(), promotes=['*'])
+        sub.add('airfoils', AirfoilComp(n, i), promotes=['*'])
         sub.add('bem', BEM(n, i), promotes=['*'])
         sub.ln_solver = ScipyGMRES()
         sub.nl_solver = Brent()
@@ -1418,7 +1420,7 @@ if __name__ == "__main__":
     bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
     # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='CS', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
     # airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='FD', iterations=20, processors=0) ### AirfoilParameterization = ('CST', 'Files', 'NACA'), CFDorXFOIL=('XFOIL', 'CFD'), FDorCS=('FD', 'CS'), iterations=20, processors=0)
-    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='CFD', FDorCS='CS', iterations=250, processors=0)
+    airfoil_analysis_options = dict(AirfoilParameterization='CST', CFDorXFOIL='XFOIL', FDorCS='CS', iterations=250, processors=0)
     # atmosphere
     rho = 1.225
     mu = 1.81206e-5
@@ -1448,9 +1450,19 @@ if __name__ == "__main__":
     airfoil_types = [0]*8
     airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
     airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+    # airfoil_types = [0]*8
+    # airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
+    # airfoil_types[1] = afinit(basepath + 'Cylinder2.dat')
+    # airfoil_types[2] = afinit(basepath + 'DU40_A17.dat')
+    # airfoil_types[3] = afinit(basepath + 'DU35_A17.dat')
+    # airfoil_types[4] = afinit(basepath + 'DU30_A17.dat')
+    # airfoil_types[5] = afinit(basepath + 'DU25_A17.dat')
+    # airfoil_types[6] = afinit(basepath + 'DU21_A17.dat')
+    # airfoil_types[7] = afinit(basepath + 'NACA64_A17.dat')
 
-    for i in range(len(airfoil_types)):
-        airfoil_types[i+2] = afinit2(CST[i+2], 'CFD', airfoil_analysis_options['processors'], airfoil_analysis_options['iterations'])
+
+    for i in range(len(airfoil_types)-2):
+        airfoil_types[i+2] = afinit2(CST[i+2], airfoil_analysis_options['CFDorXFOIL'], airfoil_analysis_options['processors'], airfoil_analysis_options['iterations'])
 
     # airfoil_types = [0]*8
     # airfoil_types[0] = afinit(basepath + 'Cylinder1.dat')
@@ -1458,7 +1470,6 @@ if __name__ == "__main__":
 
     # for i in range(len(airfoil_types)-2):
     #     airfoil_types[i+2] = afinit2(CST[i+2])
-
     # place at appropriate radial stations
     af_idx = [0, 0, 1, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7]
 
@@ -1567,20 +1578,26 @@ if __name__ == "__main__":
     tsr = 7.55
     pitch = np.array([0.0])
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
-    # tsr = np.linspace(14, 14, 1)
-    # Omega = 10.0 * np.ones_like(tsr)
-    # Uinf = Omega*pi/30.0 * Rtip/tsr
+    tsr = np.linspace(2, 14, 20)
+    Omega = 10.0 * np.ones_like(tsr)
+    Uinf = Omega*pi/30.0 * Rtip/tsr
+
+
+    tsr = np.linspace(2, 14, 20)
+    Omega = 10.0 * np.ones_like(tsr)
+    Uinf = Omega*pi/30.0 * Rtip/tsr
+    pitch = np.zeros_like(tsr)
     n2 = len(Uinf)
 
     ccblade = Problem(impl=impl)
     ccblade.root = CCBlade(nSector, n, n2)
 
     ### SETUP OPTIMIZATION
-    ccblade.driver = pyOptSparseDriver()
-    ccblade.driver.options['optimizer'] = 'SNOPT'
-    ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
+    # ccblade.driver = pyOptSparseDriver()
+    # ccblade.driver.options['optimizer'] = 'SNOPT'
+    # ccblade.driver.add_desvar('Omega', lower=1.5, upper=25.0)
     # ccblade.driver.add_desvar('airfoil_parameterization', lower=-1.0, upper=1.0)
-    ccblade.driver.add_objective('obj')
+    # ccblade.driver.add_objective('obj')
     # recorder = SqliteRecorder('recorder')
     # recorder = DumpRecorder('optimization_cp.log')
     # recorder.options['record_params'] = True
