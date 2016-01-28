@@ -161,6 +161,7 @@ class Polar(object):
         # find linear region
         idx = np.logical_and(alpha >= alpha_linear_min,
                              alpha <= alpha_linear_max)
+
         p = np.polyfit(alpha[idx], cl_2d[idx], 1)
         m = p[0]
         alpha0 = -p[1]/m
@@ -653,7 +654,15 @@ class Airfoil(object):
                     to_delete = np.append(to_delete, k)
             cl = np.delete(cl, to_delete)
             cd = np.delete(cd, to_delete)
+            if not cl:
+                alphas2 = alphas
             alphas = np.delete(alphas, to_delete)
+            if not cl:
+
+                print 'invalid airfoil shape'
+                for z in range(len(alphas2)):
+                    cl = 2E-09 * alphas2[z]**6 + 5E-07 * alphas2[z]**5 + 4E-06 * alphas2[z]**4 - 0.0004 * alphas2[z]**3 - 0.0024 * alphas2[z]**2 + 0.1447 * alphas2[z] + 0.4665
+                    cd = -5E-09 * alphas2[z]**6 - 2E-08 * alphas2[z]**5 + 3E-06 * alphas2[z]**4 + 1E-05 * alphas2[z]**3 - 9E-05 * alphas2[z]**2 - 0.0004 * alphas2[z] + 0.0075
 
             polars.append(polarType(Re, alphas, cl, cd, cm))
 
@@ -829,7 +838,17 @@ class Airfoil(object):
                         to_delete = np.append(to_delete, k)
                 cl = np.delete(cl, to_delete)
                 cd = np.delete(cd, to_delete)
+                if cl.size == 0:
+                    alphas2 = alphas
                 alphas = np.delete(alphas, to_delete)
+                if cl.size == 0:
+                    print 'invalid airfoil shape'
+                    cl = np.zeros(len(alphas2))
+                    cd = np.zeros(len(alphas2))
+                    for z in range(len(alphas2)):
+                        cl[z] = 2E-09 * alphas2[z]**6 + 5E-07 * alphas2[z]**5 + 4E-06 * alphas2[z]**4 - 0.0004 * alphas2[z]**3 - 0.0024 * alphas2[z]**2 + 0.1447 * alphas2[z] + 0.4665
+                        cd[z] = -5E-09 * alphas2[z]**6 - 2E-08 * alphas2[z]**5 + 3E-06 * alphas2[z]**4 + 1E-05 * alphas2[z]**3 - 9E-05 * alphas2[z]**2 - 0.0004 * alphas2[z] + 0.0075
+                    alphas = alphas2
 
                 polars.append(polarType(Re, alphas, cl, cd, cm))
 
@@ -838,7 +857,11 @@ class Airfoil(object):
                 cd = np.zeros(len(alphas))
                 cm = np.zeros(len(alphas))
                 for j in range(len(alphas)):
-                    cl[j], cd[j],  = Airfoil.cfdGradients(CST[0], alphas[j], Re, iterations, processors, 'CS', Uinf=10.0, ComputeGradients=False)
+                    if j == 0:
+                        mesh = True
+                    else:
+                        mesh = False
+                    cl[j], cd[j],  = Airfoil.cfdGradients(CST[0], alphas[j], Re, iterations, processors, 'CS', Uinf=10.0, ComputeGradients=False, GenerateMESH=mesh)
                 polars.append(polarType(Re, alphas, cl, cd, cm))
 
 
@@ -1275,14 +1298,14 @@ class Airfoil(object):
             airfoil = pyXLIGHT.xfoilAnalysis(airfoil_shape_file, x=x, y=y)
             airfoil.re = Re
             airfoil.mach = 0.0 # Uinf / 340.29
-            airfoil.iter = 100
+            airfoil.iter = 500
 
             angle = alpha
             cl, cd, cm, lexitflag = airfoil.solveAlphaComplex(angle)
             if lexitflag:
                 cl = -10.0
                 cd = 0.0
-                print "XFOIL FAILURE"
+                print CST
             return cl, cd
             # error handling in case of XFOIL failure
             # for k in range(len(cl)):
@@ -1441,7 +1464,7 @@ class Airfoil(object):
         return cl, cd, dcl_dcst, dcd_dcst
 
     @classmethod
-    def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS, Uinf, ComputeGradients):
+    def cfdGradients(self, CST, alpha, Re, iterations, processors, FDorCS, Uinf, ComputeGradients, GenerateMESH=True):
 
         import os, sys, shutil, copy
         sys.path.append(os.environ['SU2_RUN'])
@@ -1499,15 +1522,15 @@ class Airfoil(object):
 
         coord_file.close()
 
+        if GenerateMESH:
+            ## Update mesh for specific airfoil (mesh deformation in SU2_EDU)
+            basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'SU2_EDU/bin')
+            su2_file_execute = basepath + os.path.sep + 'SU2_EDU'
 
-        ## Update mesh for specific airfoil (mesh deformation in SU2_EDU)
-        basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'SU2_EDU/bin')
-        su2_file_execute = basepath + os.path.sep + 'SU2_EDU'
-
-        savedPath = os.getcwd()
-        os.chdir(basepath)
-        subprocess.call([su2_file_execute])
-        os.chdir(savedPath)
+            savedPath = os.getcwd()
+            os.chdir(basepath)
+            subprocess.call([su2_file_execute])
+            os.chdir(savedPath)
 
         partitions = processors
         compute = True
@@ -1516,8 +1539,8 @@ class Airfoil(object):
 
         # Config and state
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'CoordinatesFiles')
-        filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
-        # filename = basepath + os.path.sep + 'test_incomp_rans.cfg'
+        # filename = basepath + os.path.sep + 'inv_NACA0012.cfg'
+        filename = basepath + os.path.sep + 'test_incomp_rans.cfg'
         # filename = basepath + os.path.sep + 'turb_nasa.cfg'
 
         config = SU2.io.Config(filename)
@@ -1527,11 +1550,14 @@ class Airfoil(object):
 
         basepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'SU2_EDU/bin')
         mesh_filename = basepath + os.path.sep + 'mesh_AIRFOIL.su2'
-
+        # mesh_filename = basepath + os.path.sep + 'mesh_NACA0012_INV.su2'
         config.WRT_CSV_SOL = 'YES'
         config.MESH_FILENAME = mesh_filename
         config.AoA = alpha #np.degrees(alpha)
         Ma = Uinf / 340.29  # Speed of sound at sea level
+        x_vel = Uinf * cos(np.radians(alpha))
+        y_vel = Uinf * sin(np.radians(alpha))
+        config.FREESTREAM_VELOCITY = '( ' + str(x_vel) + ', ' + str(y_vel) + ', 0.00 )'
         config.MACH_NUMBER = Ma
         config.REYNOLDS_NUMBER = Re
         # find solution files if they exist
@@ -1579,11 +1605,13 @@ class Airfoil(object):
             get_gradients = info.get('GRADIENTS')
             dcl_dx = get_gradients.get('LIFT')
 
-            where_are_NaNs_cl = np.isnan(dcl_dx)
-            dcl_dx[where_are_NaNs_cl] = 0.0
-
-            where_are_NaNs_cl = np.isnan(dcl_dx)
-            dcd_dx[where_are_NaNs_cl] = 0.0
+            dcl_dx[0], dcl_dx[-1] = 0.0, 0.0
+            dcd_dx[0], dcd_dx[-1] = 0.0, 0.0
+            # where_are_NaNs_cl = np.isnan(dcl_dx)
+            # dcl_dx[where_are_NaNs_cl] = 0.0
+            #
+            # where_are_NaNs_cl = np.isnan(dcl_dx)
+            # dcd_dx[where_are_NaNs_cl] = 0.0
 
             n = len(CST)
             m = len(dcd_dx)
@@ -1613,7 +1641,7 @@ class Airfoil(object):
                         if (coor_new[1][coor_d] - coord_old[1][coor_d]).real == 0:
                             dcst_dx[i][j] = 0
                         else:
-                            dcst_dx[i][j] = 1/((coor_new[1][coor_d] - coord_old[1][coor_d]).real / fd_step)
+                            dcst_dx[i][j] = 1/((coor_new[1][coor_d] - coord_old[1][coor_d]).real / fd_step )
                         j += 1
 
             elif FDorCS == 'CS':
@@ -2141,7 +2169,7 @@ class CCAirfoil:
     # implements(AirfoilInterface)
 
 
-    def __init__(self, alpha, Re, cl, cd, cm):
+    def __init__(self, alpha, Re, cl, cd, cm, CST=None):
         """Setup CCAirfoil from raw airfoil data on a grid.
 
         Parameters
@@ -2210,6 +2238,8 @@ class CCAirfoil:
         #     plt.plot(test.alphas_wind, test.cd_wind, label='WIND')
         #
         #     plt.show()
+        if CST is not None:
+            self.CST = CST
 
 
     @classmethod
@@ -2247,7 +2277,7 @@ class CCAirfoil:
             a constructed CCAirfoil object
 
         """
-        alphas = np.linspace(-15, 15, 20)
+        alphas = np.linspace(-16, 16, 20)
         Re = 1e7 #1e6
         af = Airfoil.initFromCST(CST, alphas, [Re], CFDorXFOIL, processors=processors, iterations=iterations)
         r_over_R = 0.5
@@ -2258,7 +2288,7 @@ class CCAirfoil:
         af_extrap1 = af3D.extrapolate(cd_max)
         alpha, Re, cl, cd, cm = af_extrap1.createDataGrid()
 
-        return cls(alpha, Re, cl, cd, cm)
+        return cls(alpha, Re, cl, cd, cm, CST=CST)
 
 
     def evaluate(self, alpha, Re):
