@@ -11,6 +11,8 @@ from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
 from airfoilprep import Airfoil
 import cProfile
+# from brent import Brent
+
 
 class CCInit(Component):
     """
@@ -693,18 +695,18 @@ class CCEvaluate(Component):
         self.add_param('rho', shape=1)
         self.add_param('precone', shape=1)
         self.add_param('Rhub', shape=1)
-        self.add_param('nSector', val=4)
+        self.add_param('nSector', val=4, pass_by_obj=True)
         self.add_param('rotorR', shape=1)
         for i in range(nSector):
             self.add_param('Np'+str(i+1), val=np.zeros(n))
             self.add_param('Tp'+str(i+1), val=np.zeros(n))
 
-        self.add_output('P', val=0.5)
-        self.add_output('T', val=0.5)
-        self.add_output('Q', val=0.5)
-        self.add_output('CP', val=0.5)
-        self.add_output('CT', val=0.5)
-        self.add_output('CQ', val=0.5)
+        self.add_output('P', shape=1)
+        self.add_output('T', shape=1)
+        self.add_output('Q', shape=1)
+        self.add_output('CP', shape=1)
+        self.add_output('CT', shape=1)
+        self.add_output('CQ', shape=1)
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
@@ -1057,7 +1059,7 @@ class SweepGroup(Group):
         self.add('init', CCInit(), promotes=['*'])
         for i in range(nSector):
             azimuth = pi/180.0*360.0*float(i)/nSector
-            self.add('group'+str(i+1), Sweep(azimuth, n), promotes=['r', 'Uinf', 'pitch', 'Rtip', 'Omega', 'chord', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'pitch', 'shearExp', 'B', 'bemoptions', 'af'])
+            self.add('group'+str(i+1), Sweep(azimuth, n), promotes=['r', 'Uinf', 'pitch', 'Rtip', 'Omega', 'chord', 'rho', 'mu', 'Rhub', 'hubHt', 'precurve', 'presweep', 'precone', 'tilt', 'yaw', 'shearExp', 'B', 'bemoptions', 'af'])
 
 class FlowSweep(Group):
 
@@ -1289,7 +1291,6 @@ if __name__ == "__main__":
     theta = np.array([13.308, 13.308, 13.308, 13.308, 11.480, 10.162, 9.011, 7.795,
                       6.544, 5.361, 4.188, 3.125, 2.319, 1.526, 0.863, 0.370, 0.106])
     B = 3  # number of blades
-    iterRe = 1
     bemoptions = dict(usecd=True, tiploss=True, hubloss=True, wakerotation=True)
 
     # atmosphere
@@ -1325,7 +1326,6 @@ if __name__ == "__main__":
     shearExp = 0.2
     hubHt = 80.0
     nSector = 8
-
     # set conditions
     Uinf = 10.0
     tsr = 7.55
@@ -1369,10 +1369,10 @@ if __name__ == "__main__":
     pitch = np.array([0.0])
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
 
-    tsr = np.linspace(2, 14, 20)
-    Omega = 10.0 * np.ones_like(tsr)
-    Uinf = Omega*pi/30.0 * Rtip/tsr
-    pitch = np.zeros_like(tsr)
+    # tsr = np.linspace(2, 14, 20)
+    # Omega = 10.0 * np.ones_like(tsr)
+    # Uinf = Omega*pi/30.0 * Rtip/tsr
+    # pitch = np.zeros_like(tsr)
 
     n2 = len(Uinf)
 
@@ -1419,7 +1419,7 @@ if __name__ == "__main__":
 
 
     t0 = time.time()
-    cProfile.run('ccblade.run()')
+    ccblade.run()
     # ccblade.run()
     t = time.time()
     print t - t0
