@@ -11,6 +11,7 @@ from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
 from airfoilprep import Airfoil
 from brent import Brent
+import cProfile
 
 class CCInit(Component):
     """
@@ -966,39 +967,28 @@ class CCEvaluate(Component):
 
         return J
 
-
 class BrentGroup(Group):
     def __init__(self, n, i):
         super(BrentGroup, self).__init__()
-        self.add('flow', FlowCondition(), promotes=['*'])
-        self.add('airfoils', AirfoilComp(n, i), promotes=['*'])
-        sub = self.add('sub', Group(), promotes=['*'])
-        sub.add('bem', BEM(n, i), promotes=['*'])
-        sub.ln_solver = ScipyGMRES()
-        sub.nl_solver = Brent()
-        self.ln_solver = ScipyGMRES()
-        self.nl_solver = NLGaussSeidel()
-        self.nl_solver.options['atol'] = 1e-12 #TODO Check
-        self.nl_solver.options['rtol'] = 1e-12
-        # sub.ln_solver = ScipyGMRES()
-        # self.ln_solver = ScipyGMRES()
-        # self.nl_solver = Brent()
-        # set standard limits
         epsilon = 1e-6
         phi_lower = epsilon
         phi_upper = pi/2
-        # if errf(phi_lower, *args)*errf(phi_upper, *args) > 0:  # an uncommon but possible case
-        #
-        #         if errf(-pi/4, *args) < 0 and errf(-epsilon, *args) > 0:
-        #             phi_lower = -pi/4
-        #             phi_upper = -epsilon
-        #         else:
-        #             phi_lower = pi/2
-        #             phi_upper = pi - epsilon
-        sub.nl_solver.options['lower_bound'] = phi_lower
-        sub.nl_solver.options['upper_bound'] = phi_upper
-        sub.nl_solver.options['state_var'] = 'phi_sub'
-        self.fd_options['force_fd'] = True
+        # # if errf(phi_lower, *args)*errf(phi_upper, *args) > 0:  # an uncommon but possible case
+        # #
+        # #         if errf(-pi/4, *args) < 0 and errf(-epsilon, *args) > 0:
+        # #             phi_lower = -pi/4
+        # #             phi_upper = -epsilon
+        # #         else:
+        # #             phi_lower = pi/2
+        # #             phi_upper = pi - epsilon
+        self.add('flow', FlowCondition(), promotes=['*'])
+        self.add('airfoils', AirfoilComp(n, i), promotes=['*'])
+        self.add('bem', BEM(n, i), promotes=['*'])
+        self.ln_solver = ScipyGMRES()
+        self.nl_solver = Brent()
+        self.nl_solver.options['lower_bound'] = phi_lower
+        self.nl_solver.options['upper_bound'] = phi_upper
+        self.nl_solver.options['state_var'] = 'phi_sub'
 
     def list_deriv_vars(self):
 
@@ -1375,15 +1365,21 @@ if __name__ == "__main__":
     # print 'Tp', loads['Tp']
 
     ##### Test CCBlade
-    Uinf = np.array([10.0, 5.0])  # Needs to be an array for CCBlade group
+    Uinf = np.array([10.0])  # Needs to be an array for CCBlade group
     tsr = 7.55
-    pitch = np.array([0.0, 0.0])
+    pitch = np.array([0.0])
     Omega = Uinf*tsr/Rtip * 30.0/pi  # convert to RPM
+
+    tsr = np.linspace(2, 14, 20)
+    Omega = 10.0 * np.ones_like(tsr)
+    Uinf = Omega*pi/30.0 * Rtip/tsr
+    pitch = np.zeros_like(tsr)
+
     n2 = len(Uinf)
 
     ccblade = Problem(impl=impl)
     ccblade.root = CCBlade(nSector, n, n2)
-
+    import time
     ### SETUP OPTIMIZATION
     # ccblade.driver = pyOptSparseDriver()
     # ccblade.driver.options['optimizer'] = 'SNOPT'
@@ -1393,8 +1389,14 @@ if __name__ == "__main__":
     # recorder.options['record_params'] = True
     # recorder.options['record_metadata'] = True
     # ccblade.driver.add_recorder(recorder)
-
+    print "setup start"
+    t0 = time.time()
     ccblade.setup(check=False)
+    # ccblade.run()
+    t = time.time()
+    print t - t0
+    # ccblade.setup(check=False)
+    print "setup finish"
 
     ccblade['Rhub'] = Rhub
     ccblade['Rtip'] = Rtip
@@ -1416,9 +1418,10 @@ if __name__ == "__main__":
     ccblade['af'] = af
     ccblade['bemoptions'] = bemoptions
 
-    import time
+
     t0 = time.time()
-    ccblade.run()
+    cProfile.run('ccblade.run()')
+    # ccblade.run()
     t = time.time()
     print t - t0
 
