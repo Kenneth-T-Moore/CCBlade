@@ -16,9 +16,7 @@ import unittest
 import numpy as np
 import math
 from openmdao.api import Problem
-
 from ccblade2 import CCAirfoil, CCBlade
-
 
 class TestNREL5MW(unittest.TestCase):
 
@@ -80,11 +78,13 @@ class TestNREL5MW(unittest.TestCase):
         pitch = np.array([0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
                           3.823, 6.602, 8.668, 10.450, 12.055, 13.536, 14.920, 16.226,
                           17.473, 18.699, 19.941, 21.177, 22.347, 23.469])
-
+        self.Uinf = Uinf
         n = len(r)
+        n2 = len(Uinf)
         ccblade = Problem()
-        root = ccblade.root = CCBlade(nSector, n)
-        ccblade.setup()
+        root = ccblade.root = CCBlade(nSector, n, n2)
+
+        ccblade.setup(check=False)
         ccblade['Rhub'] = Rhub
         ccblade['Rtip'] = Rtip
         ccblade['r'] = r
@@ -99,45 +99,19 @@ class TestNREL5MW(unittest.TestCase):
         ccblade['shearExp'] = shearExp
         ccblade['hubHt'] = hubHt
         ccblade['nSector'] = nSector
-        ccblade['Uinf'] = Uinf[0]
-        ccblade['Omega'] = Omega[0]
-        ccblade['pitch'] = np.radians(pitch[0])
         ccblade['af'] = af
         ccblade['bemoptions'] = bemoptions
-
+        ccblade['Uinf'] = Uinf
+        ccblade['Omega'] = Omega
+        ccblade['pitch'] = np.radians(pitch)
         ccblade.run()
 
-        P = np.zeros(len(Uinf))
-        Q = np.zeros(len(Uinf))
-        T = np.zeros(len(Uinf))
-
-        for i in range(len(Uinf)):
-            ccblade['Uinf'] = Uinf[i]
-            ccblade['Omega'] = Omega[i]
-            ccblade['pitch'] = np.radians(pitch[i])
-
-            ccblade.run()
-
-            P[i] = root.eval.unknowns['P']
-            Q[i] = root.eval.unknowns['Q']
-            T[i] = root.eval.unknowns['T']
-
-        self.P = P
-        self.Q = Q
-        self.T = T
+        self.P = ccblade['P']
+        self.Q = ccblade['Q']
+        self.T = ccblade['T']
 
 
     def test_thrust_torque(self):
-
-
-        Uinf = np.array([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                         20, 21, 22, 23, 24, 25])
-        Omega = np.array([6.972, 7.183, 7.506, 7.942, 8.469, 9.156, 10.296, 11.431,
-                          11.890, 12.100, 12.100, 12.100, 12.100, 12.100, 12.100,
-                          12.100, 12.100, 12.100, 12.100, 12.100, 12.100, 12.100, 12.100])
-        pitch = np.array([0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
-                          3.823, 6.602, 8.668, 10.450, 12.055, 13.536, 14.920, 16.226,
-                          17.473, 18.699, 19.941, 21.177, 22.347, 23.469])
 
 
         Pref = np.array([42.9, 188.2, 427.9, 781.3, 1257.6, 1876.2, 2668.0, 3653.0,
@@ -159,15 +133,7 @@ class TestNREL5MW(unittest.TestCase):
         T = self.T
         Q = self.Q
 
-        # import matplotlib.pyplot as plt
-        # plt.plot(Uinf, P/1e6)
-        # plt.plot(Uinf, Pref/1e3)
-        # plt.figure()
-        # plt.plot(Uinf, T/1e6)
-        # plt.plot(Uinf, Tref/1e3)
-        # plt.show()
-
-        idx = (Uinf < 15)
+        idx = (self.Uinf < 15)
         np.testing.assert_allclose(Q[idx]/1e6, Qref[idx]/1e3, atol=0.15)
         np.testing.assert_allclose(P[idx]/1e6, Pref[idx]/1e3, atol=0.2)  # within 0.2 of 1MW
         np.testing.assert_allclose(T[idx]/1e6, Tref[idx]/1e3, atol=0.15)
