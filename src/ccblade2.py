@@ -4,14 +4,14 @@ import warnings
 from math import cos, sin, pi, sqrt, acos, exp
 import numpy as np
 import _bem
-from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel, ParallelGroup, Brent
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel, ParallelGroup#, Brent
 from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from openmdao.core.mpi_wrap import MPI
 from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
 from airfoilprep import Airfoil
 import cProfile
-# from brent import Brent
+from brent import Brent
 
 
 class CCInit(Component):
