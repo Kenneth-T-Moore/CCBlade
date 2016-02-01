@@ -4,14 +4,13 @@ import warnings
 from math import cos, sin, pi, sqrt, acos, exp
 import numpy as np
 import _bem
-from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel, ParallelGroup#, Brent
+from openmdao.api import Component, ExecComp, IndepVarComp, Group, Problem, ScipyGMRES, NLGaussSeidel, ParallelGroup, Brent
 from openmdao.drivers.pyoptsparse_driver import pyOptSparseDriver
 from openmdao.core.mpi_wrap import MPI
 from zope.interface import Interface, implements
 from scipy.interpolate import RectBivariateSpline, bisplev
 from airfoilprep import Airfoil
 import cProfile
-from brent import Brent
 
 
 class CCInit(Component):
@@ -334,7 +333,7 @@ class BEM(Component):
         self.add_output('ap_sub', shape=1)
         self.add_output('da_dx', val=np.zeros(9))
         self.add_output('dap_dx', val=np.zeros(9))
-        self.add_state('phi_sub', shape=1)
+        self.add_state('phi_sub', shape=1, val=1.0e-7)
 
         self.fd_options['form'] = 'central'
         self.fd_options['step_type'] = 'relative'
@@ -1209,7 +1208,7 @@ class CCAirfoil:
         """
 
         af = Airfoil.initFromAerodynFile(aerodynFile)
-        alpha, Re, cl, cd = af.createDataGrid()
+        alpha, Re, cl, cd. cm = af.createDataGrid()
         return cls(alpha, Re, cl, cd)
 
 
